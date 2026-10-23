@@ -30,6 +30,7 @@ cc_library(
         "protocol/sd_protocol.h",
     ],
     features = COMPILER_WARNING_FEATURES,
+    visibility = ["//experimental/someip_sd/iosock_event_module:__pkg__"],
 )
 
 cc_binary(

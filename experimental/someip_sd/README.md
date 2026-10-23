@@ -22,6 +22,7 @@ exposed to local clients via `score::message_passing`. Not part of the product.
 | --- | --- |
 | `:someip_sd_daemon` | SD-only daemon (lg-someip `ServiceManager` with an injected `SdOnlyRouter`) |
 | `:someip_event_module` | User-space stand-in for the io-sock event module: SOME/IP notifications (UDP) to LoLa events and back |
+| `iosock_event_module:mods_someip_event` | QNX io-sock event module (`mods-someip-event.so`), with kernel UDP sockets and MEXTADD-backed TX |
 | `:sd_client` | Client library for the daemon protocol (`protocol/sd_protocol.h`) |
 | `:someip_sd_test_client` | Requests a service, subscribes an eventgroup and prints the events received via LoLa |
 | `:someip_sd_test_provider` | Offers `0x2345/0x0001` via the SD daemon and publishes event `0x8001` as LoLa samples |
@@ -31,6 +32,8 @@ exposed to local clients via `score::message_passing`. Not part of the product.
 | `test:someip_sd_dual_qemu_test` | Integration test on two QNX QEMU VMs (see below) |
 | `test:someip_sd_docker_test` | Same integration test on two Linux Docker containers |
 | `iosock_poc:iosock_poc_test` | QNX only: LoLa and `score::message_passing` inside an io-sock module (see below) |
+| `iosock_event_module:kernel_transport_test` | QNX only: direct kernel transport, routing, payload boundaries, fan-out and LoLa slot reuse |
+| `test:scenario_lifecycle_test` | Host-side platform selection, module readiness and scenario cleanup checks |
 
 ## Prototyp target architecture overview
 ![Architecture diagram](doc/prototype.svg)
@@ -99,10 +102,11 @@ flowchart LR
   service instance and event the event module offers; it is shared by the event module and the consumers.
 - TX: for a provided service the event module creates a `GenericProxy` on the provider's LoLa skeleton (same naming,
   same `EventSample` layout, only size and payload used) as soon as it is found, and sends each sample as SOME/IP
-  notification (session per event, interface version = configured major) to all remote subscribers via
-  `sendmsg` with the header and the payload taken directly from the LoLa slot. A receive handler wakes the receive
-  loop. For fields the latest sample is held and sent to every new subscriber. Held samples are released and the
-  events unsubscribed before the proxy is destroyed, otherwise LoLa terminates the process.
+  notification (session per event, interface version = configured major) to all remote subscribers. The POSIX module
+  uses `sendmsg` with the header and payload taken from the LoLa slot; a receive handler wakes its receive loop.
+  The QNX io-sock module uses kernel `sosend` with `MEXTADD` (see below). For fields the latest sample is held and
+  sent to every new subscriber. Held samples are released and the events unsubscribed before the proxy is destroyed,
+  otherwise LoLa terminates the process.
 - Limitations: UDP and IPv4 only, no SOME/IP-TP, no multicast eventgroups, payload up to 1400 bytes, no resync
   after an event module restart (restart the SD daemon as well), skeletons are never recreated, remote subscriptions
   are acknowledged without asking the providing application, no methods.
@@ -174,11 +178,15 @@ Threading:
 ```sh
 bazel test //experimental/someip_sd/test:someip_sd_docker_test                            # Linux
 bazel test --config=qnx_x86_64 //experimental/someip_sd/test:someip_sd_dual_qemu_test     # QNX
+bazel test --config=qnx_x86_64 //experimental/someip_sd/iosock_event_module:kernel_transport_test
+bazel test //experimental/someip_sd/test:scenario_lifecycle_test
 ```
 
 Both run the scenario in [test/someip_sd_scenario.py](test/someip_sd_scenario.py) with the configs in
-[test/config](test/config): the SD side (10.0.3.1) runs `someip_event_module`, `someip_sd_daemon`, the test client and
-the test provider, the peer side (10.0.3.2) runs `someipd`, `someip_sd_peer` and `someip_sd_peer_consumer`.
+[test/config](test/config): the SD side (10.0.3.1) runs the event module, `someip_sd_daemon`, the test client and
+the test provider; the peer side (10.0.3.2) runs `someipd`, `someip_sd_peer` and `someip_sd_peer_consumer`.
+On Linux the event module is the original `someip_event_module` process. QNX packages and loads only
+`mods-someip-event.so`, and waits for its readiness log before starting the SD daemon.
 
 - RX: availability, subscription acknowledgement, the LoLa offer of the event module, the events received via LoLa
   and that no events arrive after the client unsubscribed (`--runtime`).
@@ -189,14 +197,61 @@ the test provider, the peer side (10.0.3.2) runs `someipd`, `someip_sd_peer` and
   with the command parsing of the ITF.
 
 - QNX: `dual_qemu` environment with the inter-VM network. Requires the QNX toolchain setup described in the root
-  `.bazelrc`.
+  `.bazelrc`. Scenario-owned processes are tracked by PID and stopped on success and failure. The io-sock module
+  stays loaded until the isolated VM is destroyed.
 - Linux: the ITF Docker container plus a second container started by the test, both attached to a bridge network
   with subnet 10.0.3.0/24 (must not be in use on the host).
+
+## QNX io-sock event module
+
+[iosock_event_module](iosock_event_module) implements the same seven routing commands, LoLa naming, `EventSample`
+layout, route/subscriber matching, field caching, session counters and UDP/IPv4 limitations as the POSIX module.
+The SD daemon and applications do not need a new control protocol or deployment configuration.
+
+```sh
+bazel build --config=qnx_x86_64 //experimental/someip_sd/iosock_event_module:mods_someip_event
+# After installing the module and existing configs under /opt/someip_sd:
+mount -T io-sock /opt/someip_sd/bin/mods-someip-event.so
+cat /tmp/someip_sd_event_module.log
+# Start the SD daemon after "ready: kernel socket event module" appears.
+```
+
+- The C glue owns all event-transport sockets: `socreate`, `sosetopt`, `sobind`, `soreceive` and `sosend`.
+  The C++ part uses the existing LoLa runtime and QNX `score::message_passing`, not POSIX socket calls for event
+  traffic. The separate SD daemon retains its own SD transport.
+- Routing commands enter a bounded, backpressured control queue. A single kthread serializes route changes,
+  LoLa service discovery, RX and TX. It drains a bounded number of datagrams per port and waits approximately
+  10 ms between iterations, so idle or busy RX sockets do not prevent TX or new routing commands from progressing.
+- RX obtains a datagram mbuf chain from `soreceive`, reads small SOME/IP headers, then copies each matching
+  notification payload **directly from that chain into the allocated LoLa slot**. There is no intermediate
+  datagram/payload buffer. Each notification uses only the first eligible route in instance-ID order, with no
+  fallback to another LoLa interface if allocation or sending fails. Lookup searches only the packet's service-ID
+  range. Concatenated messages and mbuf-chain boundaries are supported.
+- TX builds a separate 16-byte header mbuf and attaches the original LoLa payload using **MEXTADD**.
+  No LoLa-to-socket payload copy is made. Shared ownership retains the non-copyable LoLa sample for every recipient
+  and any cached field value. Each mbuf callback drops only its own reference.
+- Samples also retain their proxy owner. Removing a provided service stops new sends and drops its field cache,
+  but cannot destroy a proxy that still owns in-flight samples. The last sample is released before the proxy
+  unsubscribes and is destroyed. Slot exhaustion applies backpressure rather than creating a payload-copy queue.
+- This is not NIC-to-LoLa zero-copy: RX still performs the direct mbuf-to-LoLa copy. MEXTADD lifetime completion
+  is not a hardware-transmit completion guarantee, and physical NIC DMA suitability or stack/driver-internal
+  copying is not established by the QEMU tests.
+- **Lifecycle:** this SDK rejects generic-module detach (`umount` reports `Not supported`; io-sock logs
+  `unloading ... not supported`). The event module deliberately rejects unload/quiesce and stays resident until
+  io-sock exits. The QNX tests use isolated VMs and do not pretend that VM destruction is module unloading.
+  Do not attempt to switch modules in a running stack. As before, there is no SD routing resynchronization after
+  an event-module/stack restart.
+
+The focused transport test bypasses SD and drives the unchanged routing protocol directly. It checks source port
+and endpoint filtering, invalid/oversized messages, concatenated 1400-byte messages across a large datagram, empty
+payloads, wildcard subscriptions, unsubscribe, remove/re-offer, byte-exact TX framing, two-recipient fan-out,
+initial-field replay, renewal deduplication, and 64 alternating empty/1400-byte sample publications through a
+ten-slot deployment. It also checks that network sample references are released after StopOffer.
 
 ## io-sock module feasibility check
 
 [iosock_poc](iosock_poc) checks whether the event module can run inside io-sock with LoLa and
-`score::message_passing`, before the event module is ported:
+`score::message_passing`. It remains a standalone feasibility test, separate from the event module:
 
 ```sh
 bazel test --config=qnx_x86_64 //experimental/someip_sd/iosock_poc:iosock_poc_test
@@ -264,10 +319,14 @@ fix). The QNX 8 build issues (`SO_VLANPRIO`, `__progname`) are fixed upstream si
 
 ## Running on a target
 
-Build for the target, copy `someip_event_module`, `someip_sd_daemon`, `someip_sd_test_client` and
+On Linux, build for the target, copy `someip_event_module`, `someip_sd_daemon`, `someip_sd_test_client` and
 `test/config/{sd_daemon,mw_com_config,logging}.json` to the target (binaries in `bin/`, configs in `etc/`) and set
 `unicast` to the target's address on the interface towards the peer. All three processes must run on the same
 machine; start the event module first.
+
+On QNX, install `mods-someip-event.so` instead of the POSIX event-module executable and load it as described above.
+The module uses `/opt/someip_sd/etc/mw_com_config.json` and logs to `/tmp/someip_sd_event_module.log`.
+Do not run both event-module implementations in the same stack; they use the same control service and UDP ports.
 
 ```sh
 ./bin/someip_event_module ./etc/mw_com_config.json

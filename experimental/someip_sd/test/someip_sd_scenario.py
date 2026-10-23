@@ -12,12 +12,14 @@
 # *******************************************************************************
 """SOME/IP-SD prototype scenario shared by the QNX (dual QEMU) and Linux (Docker) integration tests.
 
-The SD side (10.0.3.1) runs someip_event_module, someip_sd_daemon and the test client, the peer side (10.0.3.2) runs the
+The SD side (10.0.3.1) runs the event module (io-sock on QNX, a process on Linux), someip_sd_daemon and the test
+client; the peer side (10.0.3.2) runs the
 upstream lg-someip someipd with a provider offering 0x1234.0x5678 and notifying event 0x8778 every second. The test
 client receives the notifications as LoLa events from the event module.
 """
 
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +40,49 @@ class ConsoleSide:
 
     def __init__(self, console):
         self._console = console
+        self._pid_files = []
 
     def sh(self, command, timeout=30):
         return self._console.run_sh_cmd_output(command, timeout=timeout)
 
     def start(self, command):
         # Subshell, since the console wrapper appends further commands and a trailing '&;' is a syntax error.
-        self.sh(f"( {command} & )")
+        pid_file = f"/tmp/someip_sd_process_{len(self._pid_files)}.pid"
+        self._pid_files.append(pid_file)
+        _sh(self, f"( {command} & echo $! > {pid_file} )")
+
+    def cleanup(self):
+        errors = []
+        for pid_file in reversed(self._pid_files):
+            rc, out = self.sh(
+                f"( if [ -r {pid_file} ]; then read pid < {pid_file};"
+                ' if kill -0 "$pid" 2>/dev/null; then kill -TERM "$pid" || exit $?; fi;'
+                f" rm {pid_file}; fi )"
+            )
+            if rc != 0:
+                errors.append(f"{pid_file}: {out}")
+        self._pid_files.clear()
+        if errors:
+            raise RuntimeError("QNX application cleanup failed:\n" + "\n".join(errors))
+
+    def start_event_module(self):
+        _sh(self, f"mount -T io-sock {SD_DIR}/bin/mods-someip-event.so")
+        deadline = time.monotonic() + 10
+        out = ""
+        while time.monotonic() < deadline:
+            rc, out = self.sh(f"cat {EVENT_MODULE_LOG}")
+            if rc == 0 and "ready: kernel socket event module" in out:
+                return
+            time.sleep(0.1)
+        raise RuntimeError(f"io-sock event module did not become ready:\n{out}")
+
+    def check_event_module(self, log):
+        assert "ready: kernel socket event module" in log, "QNX did not use the io-sock module"
+        assert "RX direct mbuf-to-LoLa:" in log, "kernel RX did not write directly into LoLa"
+        assert "TX MEXTADD: first notification" in log, "kernel TX did not use MEXTADD"
+        assert "TX MEXTADD: first LoLa sample reference released" in log, "mbuf sample references were not released"
+        _sh(self, "ls -d /dev/socket /dev/io-sock/mods-someip-event.so")
+        # This SDK cannot detach generic io-sock modules. The module stays resident until VM teardown.
 
 
 class ContainerSide:
@@ -61,6 +99,15 @@ class ContainerSide:
     def start(self, command):
         self._container.exec_run(["/bin/sh", "-c", f"{command}"], detach=True)
 
+    def start_event_module(self):
+        self.start(f"{SD_DIR}/bin/someip_event_module {SD_DIR}/etc/mw_com_config.json > {EVENT_MODULE_LOG} 2>&1")
+
+    def check_event_module(self, log):
+        del log
+
+    def cleanup(self):
+        pass  # Container lifetime and process cleanup are managed by the Docker fixtures.
+
 
 def _sh(side, command, timeout=30):
     rc, out = side.sh(command, timeout=timeout)
@@ -70,11 +117,28 @@ def _sh(side, command, timeout=30):
 
 
 def run(sd_side, peer_side):
+    succeeded = False
+    try:
+        _run(sd_side, peer_side)
+        succeeded = True
+    finally:
+        errors = []
+        for side in (sd_side, peer_side):
+            try:
+                side.cleanup()
+            except RuntimeError as error:
+                errors.append(str(error))
+                logger.error("%s", error)
+        if succeeded and errors:
+            raise RuntimeError("\n".join(errors))
+
+
+def _run(sd_side, peer_side):
     # Background output must not reach the QNX console, it would interleave with the command parsing of the ITF.
     peer_side.start(f"{PEER_DIR}/bin/someipd {PEER_DIR}/etc/lg_peer.json > /tmp/someip_sd_someipd.log 2>&1")
     _sh(peer_side, "sleep 1")
     peer_side.start(f"{PEER_DIR}/bin/someip_sd_peer {PEER_DIR}/etc/lg_peer.json > /tmp/someip_sd_peer.log 2>&1")
-    sd_side.start(f"{SD_DIR}/bin/someip_event_module {SD_DIR}/etc/mw_com_config.json > {EVENT_MODULE_LOG} 2>&1")
+    sd_side.start_event_module()
     _sh(sd_side, "sleep 1")
     sd_side.start(f"{SD_DIR}/bin/someip_sd_daemon {SD_DIR}/etc/sd_daemon.json > /tmp/someip_sd_daemon.log 2>&1")
     _sh(sd_side, "sleep 1")
@@ -111,6 +175,7 @@ def run(sd_side, peer_side):
     _sh(sd_side, "sleep 1")
     module_log = _sh(sd_side, f"cat {EVENT_MODULE_LOG}")
     print(f"\n[peer consumer]\n{peer_out}\n[event module]\n{module_log}")
+    sd_side.check_event_module(module_log)
 
     assert "service 0x2345.0x0001 available" in peer_out, "provided service not discovered by the peer"
     assert "received 5 event(s)" in peer_out, "no notifications from the event module"

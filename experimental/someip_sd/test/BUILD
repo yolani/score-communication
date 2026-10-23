@@ -13,6 +13,7 @@
 
 load("@rules_cc//cc:defs.bzl", "cc_binary")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_filegroup")
+load("@rules_python//python:defs.bzl", "py_test")
 load("//quality/integration_testing:integration_testing.bzl", "dual_qemu_integration_test", "integration_test")
 load("//score/mw:common_features.bzl", "COMPILER_WARNING_FEATURES")
 load("//score/mw/com/test:pkg_application.bzl", "pkg_application")
@@ -26,6 +27,11 @@ _LINUX_OR_QNX = select({
     "@platforms//os:qnx": [],
     "//conditions:default": ["@platforms//:incompatible"],
 })
+
+exports_files(
+    ["config/mw_com_config.json"],
+    visibility = ["//experimental/someip_sd/iosock_event_module:__pkg__"],
+)
 
 # Remote provider on the upstream lg-someip stack; needs @lg_someip//:someipd running alongside.
 cc_binary(
@@ -49,11 +55,13 @@ pkg_application(
     name = "sd_apps",
     app_name = "someip_sd",
     bin = [
-        "//experimental/someip_sd:someip_event_module",
         "//experimental/someip_sd:someip_sd_daemon",
         "//experimental/someip_sd:someip_sd_test_client",
         "//experimental/someip_sd:someip_sd_test_provider",
-    ],
+    ] + select({
+        "@platforms//os:qnx": ["//experimental/someip_sd/iosock_event_module:mods_someip_event"],
+        "//conditions:default": ["//experimental/someip_sd:someip_event_module"],
+    }),
     etc = [
         "config/logging.json",
         "config/mw_com_config.json",
@@ -101,4 +109,14 @@ integration_test(
     ],
     filesystem = ":all_apps",
     target_compatible_with = ["@platforms//os:linux"],
+)
+
+py_test(
+    name = "scenario_lifecycle_test",
+    srcs = [
+        "someip_sd_scenario.py",
+        "test_scenario_lifecycle.py",
+    ],
+    imports = ["."],
+    main = "test_scenario_lifecycle.py",
 )
