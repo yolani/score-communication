@@ -1,0 +1,160 @@
+<mxfile host="65bd71144e">
+    <diagram id="lgsd-proto-1" name="LG SD prototype">
+        <mxGraphModel dx="741" dy="916" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="920" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="app1" parent="1" style="rounded=1;arcSize=3;whiteSpace=wrap;html=1;verticalAlign=top;align=left;spacingLeft=8;fontStyle=1;fillColor=none;strokeColor=#333333;" value="Process: App 1" vertex="1">
+                    <mxGeometry height="200" width="360" x="40" y="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="app2" parent="1" style="rounded=1;arcSize=3;whiteSpace=wrap;html=1;verticalAlign=top;align=left;spacingLeft=8;fontStyle=1;fillColor=none;strokeColor=#333333;" value="Process: App 2" vertex="1">
+                    <mxGeometry height="200" width="360" x="440" y="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="gw" parent="1" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;verticalAlign=top;align=left;spacingLeft=8;fontStyle=1;fillColor=none;strokeColor=#333333;" value="Process: someip-module (SomeIP SD daemon), one per IP address" vertex="1">
+                    <mxGeometry height="380" width="540" x="40" y="320" as="geometry"/>
+                </mxCell>
+                <mxCell id="ecu" parent="1" style="rounded=1;arcSize=4;whiteSpace=wrap;html=1;verticalAlign=top;align=left;spacingLeft=8;fontStyle=1;fillColor=#f5f5f5;strokeColor=#666666;" value="Remote ECU (SOME/IP server)" vertex="1">
+                    <mxGeometry height="210" width="260" x="860" y="320" as="geometry"/>
+                </mxCell>
+                <mxCell id="a1-app" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" value="Customer application" vertex="1">
+                    <mxGeometry height="40" width="320" x="60" y="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="a1-api" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" value="mw:com API" vertex="1">
+                    <mxGeometry height="40" width="320" x="60" y="125" as="geometry"/>
+                </mxCell>
+                <mxCell id="a1-bind" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" value="mw:com someip binding (proxy + skeleton) [new]&lt;br&gt;SD client: score::message_passing&lt;br&gt;SOME/IP data send + receive via io-sock module&lt;br&gt;E2E protect/check, payload (de)serialization" vertex="1">
+                    <mxGeometry height="62" width="320" x="60" y="175" as="geometry"/>
+                </mxCell>
+                <mxCell id="a2-app" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" value="Customer application" vertex="1">
+                    <mxGeometry height="40" width="320" x="460" y="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="a2-api" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" value="mw:com API" vertex="1">
+                    <mxGeometry height="40" width="320" x="460" y="125" as="geometry"/>
+                </mxCell>
+                <mxCell id="a2-bind" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" value="mw:com someip binding (proxy + skeleton) [new]&lt;br&gt;SD client: score::message_passing&lt;br&gt;SOME/IP data send + receive via io-sock module&lt;br&gt;E2E protect/check, payload (de)serialization" vertex="1">
+                    <mxGeometry height="62" width="320" x="460" y="175" as="geometry"/>
+                </mxCell>
+                <mxCell id="sdipc" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;b&gt;score::message_passing server [score]&lt;/b&gt;&lt;br&gt;QNX: message passing, Linux: Unix domain sockets" vertex="1">
+                    <mxGeometry height="40" width="500" x="60" y="350" as="geometry"/>
+                </mxCell>
+                <mxCell id="facade" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" value="&lt;b&gt;SD facade [new]&lt;/b&gt;&lt;br&gt;opcode-based SD control protocol&lt;br&gt;(cf. PoC #7492): offer / find / subscribe,&lt;br&gt;availability + subscription callbacks,&lt;br&gt;subscriber ref-counting per eventgroup" vertex="1">
+                    <mxGeometry height="105" width="220" x="60" y="420" as="geometry"/>
+                </mxCell>
+                <mxCell id="sm" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;ServiceManager [LG]&lt;/b&gt;&lt;br&gt;SD state machine: offer/find phases,&lt;br&gt;TTL, subscribe/ack, reboot detection" vertex="1">
+                    <mxGeometry height="65" width="220" x="60" y="555" as="geometry"/>
+                </mxCell>
+                <mxCell id="router" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" value="&lt;b&gt;SdOnlyRouter : ServiceRouter [new]&lt;/b&gt;&lt;br&gt;add_route / add_subscribe_route → event module&lt;br&gt;send_internal_message → SD facade&lt;br&gt;send_external_sd_message → SD endpoints" vertex="1">
+                    <mxGeometry height="65" width="230" x="320" y="555" as="geometry"/>
+                </mxCell>
+                <mxCell id="cfg" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Configuration [LG]&lt;/b&gt;&lt;br&gt;JSON: services, eventgroups,&lt;br&gt;event ports, SD timing (shared)" vertex="1">
+                    <mxGeometry height="50" width="220" x="60" y="640" as="geometry"/>
+                </mxCell>
+                <mxCell id="sdep" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;SD endpoints [LG]&lt;/b&gt;&lt;br&gt;EndpointUDP multicast + unicast, UDP 30490&lt;br&gt;Multiplexer, TimerMux" vertex="1">
+                    <mxGeometry height="50" width="230" x="320" y="640" as="geometry"/>
+                </mxCell>
+                <mxCell id="rsd" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" value="SOME/IP-SD" vertex="1">
+                    <mxGeometry height="50" width="220" x="880" y="365" as="geometry"/>
+                </mxCell>
+                <mxCell id="revt" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" value="SOME/IP data (events, methods)" vertex="1">
+                    <mxGeometry height="50" width="220" x="880" y="455" as="geometry"/>
+                </mxCell>
+                <mxCell id="iosock" parent="1" style="rounded=1;arcSize=3;whiteSpace=wrap;html=1;verticalAlign=top;align=left;spacingLeft=8;fontStyle=1;fillColor=#f5f5f5;strokeColor=#666666;" value="io-sock (QNX network stack)" vertex="1">
+                    <mxGeometry height="115" width="760" x="40" y="730" as="geometry"/>
+                </mxCell>
+                <mxCell id="stack" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="TCP/UDP/IP stack, socket API&lt;br&gt;(SD sockets of someip-module)" vertex="1">
+                    <mxGeometry height="60" width="340" x="60" y="765" as="geometry"/>
+                </mxCell>
+                <mxCell id="evmod" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" value="&lt;b&gt;someip event module [new]&lt;/b&gt;&lt;br&gt;io-sock extension, lola provider + consumer&lt;br&gt;RX: demux events / responses / requests to apps&lt;br&gt;TX: events / requests / responses from apps" vertex="1">
+                    <mxGeometry height="60" width="340" x="440" y="765" as="geometry"/>
+                </mxCell>
+                <mxCell id="linux" parent="1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;fillColor=none;strokeColor=#666666;fontSize=11;" value="&lt;b&gt;Linux [TBD]&lt;/b&gt;&lt;br&gt;equivalent of the io-sock event module open;&lt;br&gt;host testing e.g. via user-space receiver" vertex="1">
+                    <mxGeometry height="60" width="260" x="860" y="765" as="geometry"/>
+                </mxCell>
+                <mxCell id="eth" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" value="ETH" vertex="1">
+                    <mxGeometry height="30" width="1080" x="40" y="865" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-a1" edge="1" parent="1" source="a1-bind" style="endArrow=classic;startArrow=classic;html=1;exitX=0.3;exitY=1;exitDx=0;exitDy=0;entryX=0.3;entryY=0;entryDx=0;entryDy=0;" target="sdipc" value="message_passing&lt;br&gt;(SD control)">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-a2" edge="1" parent="1" source="a2-bind" style="endArrow=classic;startArrow=classic;html=1;exitX=0.2;exitY=1;exitDx=0;exitDy=0;entryX=0.8;entryY=0;entryDx=0;entryDy=0;" target="sdipc" value="message_passing&lt;br&gt;(SD control)">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-a1-evmod" edge="1" parent="1" source="evmod" style="endArrow=classic;startArrow=classic;html=1;dashed=1;edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.9;entryY=1;entryDx=0;entryDy=0;" target="a1-bind" value="zero-copy SOME/IP data&lt;br&gt;bidirectional (lola)">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="610" y="280"/>
+                            <mxPoint x="348" y="280"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e-a2-evmod" edge="1" parent="1" source="evmod" style="endArrow=classic;startArrow=classic;html=1;dashed=1;exitX=0.86;exitY=0;exitDx=0;exitDy=0;entryX=0.85;entryY=1;entryDx=0;entryDy=0;" target="a2-bind" value="zero-copy SOME/IP data&lt;br&gt;bidirectional (lola)">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-lola-fac" edge="1" parent="1" source="sdipc" style="endArrow=classic;startArrow=classic;html=1;edgeStyle=orthogonalEdgeStyle;exitX=0.32;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="facade" value="opcodes:&lt;br&gt;request / subscribe&lt;br&gt;availability">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-fac-sm" edge="1" parent="1" source="facade" style="endArrow=classic;html=1;edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="sm" value="MessageSD →&lt;br&gt;on_internal_message()">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-sm-router" edge="1" parent="1" source="sm" style="endArrow=classic;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="router" value="ServiceRouter&lt;br&gt;interface">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-router-fac" edge="1" parent="1" source="router" style="endArrow=classic;html=1;edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="facade" value="send_internal_message()&lt;br&gt;(offer / subscribe-ack as MessageSD)">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-sm-cfg" edge="1" parent="1" source="sm" style="endArrow=classic;html=1;dashed=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="cfg" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-router-sdep" edge="1" parent="1" source="router" style="endArrow=classic;startArrow=classic;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="sdep" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-router-evmod" edge="1" parent="1" source="router" style="endArrow=classic;startArrow=classic;html=1;edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.647;entryY=0;entryDx=0;entryDy=0;" target="evmod" value="message_passing&lt;div&gt;(SD control)&lt;/div&gt;">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="660" y="587"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e-sd-net" edge="1" parent="1" source="sdep" style="endArrow=classic;startArrow=classic;html=1;edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;labelBackgroundColor=none;" target="rsd" value="SOME/IP-SD&lt;br&gt;UDP 30490 multicast / unicast">
+                    <mxGeometry relative="1" x="-0.3719" as="geometry">
+                        <mxPoint as="offset"/>
+                        <Array as="points">
+                            <mxPoint x="830" y="665"/>
+                            <mxPoint x="830" y="390"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e-evt-net" edge="1" parent="1" source="revt" style="endArrow=classic;startArrow=classic;html=1;edgeStyle=orthogonalEdgeStyle;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;labelBackgroundColor=none;" target="evmod" value="&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;SOME/IP&lt;/span&gt;&lt;div&gt;&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;events + methods&lt;/span&gt;&lt;/div&gt;">
+                    <mxGeometry relative="1" x="-0.6627" as="geometry">
+                        <mxPoint as="offset"/>
+                        <Array as="points">
+                            <mxPoint x="850" y="480"/>
+                            <mxPoint x="850" y="795"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="lg-title" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontStyle=1;" value="Legend" vertex="1">
+                    <mxGeometry height="20" width="100" x="860" y="540" as="geometry"/>
+                </mxCell>
+                <mxCell id="lg-lg" parent="1" style="rounded=0;whiteSpace=wrap;html=1;align=left;spacingLeft=6;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="[LG] reused from lg-someip" vertex="1">
+                    <mxGeometry height="25" width="260" x="860" y="562" as="geometry"/>
+                </mxCell>
+                <mxCell id="lg-score" parent="1" style="rounded=0;whiteSpace=wrap;html=1;align=left;spacingLeft=6;fillColor=#d5e8d4;strokeColor=#82b366;" value="[score] reused from eclipse-score" vertex="1">
+                    <mxGeometry height="25" width="260" x="860" y="590" as="geometry"/>
+                </mxCell>
+                <mxCell id="lg-new" parent="1" style="rounded=0;whiteSpace=wrap;html=1;align=left;spacingLeft=6;fillColor=#ffe6cc;strokeColor=#d79b00;" value="[new] to be implemented" vertex="1">
+                    <mxGeometry height="25" width="260" x="860" y="618" as="geometry"/>
+                </mxCell>
+                <mxCell id="lg-ext" parent="1" style="rounded=0;whiteSpace=wrap;html=1;align=left;spacingLeft=6;fillColor=#f5f5f5;strokeColor=#666666;" value="platform / existing / external" vertex="1">
+                    <mxGeometry height="25" width="260" x="860" y="646" as="geometry"/>
+                </mxCell>
+                <mxCell id="lg-note" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=top;fontSize=10;" value="One SD instance per IP, one network subscription per eventgroup. IPC via score::message_passing (QNX: message passing, Linux: UDS). Notifications bypass the SD process; event module gets all config at runtime (no JSON in io-sock). Not used from lg-someip: PacketRouterHost, ApplicationManager, lg-someip IPC." vertex="1">
+                    <mxGeometry height="85" width="260" x="860" y="675" as="geometry"/>
+                </mxCell>
+                <mxCell id="4qZL4zxXrcBJ5mP55ssE-1" edge="1" parent="1" source="gw" style="edgeStyle=none;html=1;" target="stack" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

@@ -463,6 +463,22 @@ http_archive(
     url = "https://registry.npmjs.org/@microsoft/sarif-multitool-linux/-/sarif-multitool-linux-5.6.0.tgz",
 )
 
+# Experimental SOME/IP service discovery prototype (//experimental/someip_sd), based on lg-someip.
+# rapidjson is no dev_dependency so that @lg_someip also resolves when this module is not the root.
+bazel_dep(name = "rapidjson", version = "1.1.0.bcr.20250205")
+
+LG_SOMEIP_COMMIT = "d09656e58ab130d72b0f5adf19a3d9cb6126d7af"
+
+http_archive(
+    name = "lg_someip",
+    build_file = "//third_party/lg_someip:lg_someip.BUILD",
+    patch_args = ["-p1"],
+    patches = ["//third_party/lg_someip:0001-fix-subscribe-ack-multicast-reset.patch"],
+    sha256 = "9af6125148555f2bdfb0c9b7246988b1ca4d6d5865c6a5fb50aaf98949b84460",
+    strip_prefix = "lg-someip-{commit}".format(commit = LG_SOMEIP_COMMIT),
+    urls = ["https://github.com/LGE-OSS/lg-someip/archive/{commit}.tar.gz".format(commit = LG_SOMEIP_COMMIT)],
+)
+
 register_toolchains(
     "//bazel/toolchains:sphinx_toolchain",
     dev_dependency = True,

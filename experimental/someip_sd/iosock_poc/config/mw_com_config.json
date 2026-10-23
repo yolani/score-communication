@@ -1,0 +1,76 @@
+{
+  "serviceTypes": [
+    {
+      "serviceTypeName": "/iosock/tx",
+      "version": { "major": 1, "minor": 0 },
+      "bindings": [{
+        "binding": "SHM",
+        "serviceId": 6002,
+        "events": [{ "eventName": "datagram", "eventId": 1 }]
+      }]
+    },
+    {
+      "serviceTypeName": "/iosock/poc",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "bindings": [
+        {
+          "binding": "SHM",
+          "serviceId": 6001,
+          "events": [
+            {
+              "eventName": "counter",
+              "eventId": 1
+            },
+            {
+              "eventName": "datagram",
+              "eventId": 2
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "serviceInstances": [
+    {
+      "instanceSpecifier": "iosock/tx",
+      "serviceTypeName": "/iosock/tx",
+      "version": { "major": 1, "minor": 0 },
+      "instances": [{
+        "instanceId": 1,
+        "asil-level": "QM",
+        "binding": "SHM",
+        "events": [{ "eventName": "datagram", "numberOfSampleSlots": 5, "maxSubscribers": 1 }]
+      }]
+    },
+    {
+      "instanceSpecifier": "iosock/poc",
+      "serviceTypeName": "/iosock/poc",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "instances": [
+        {
+          "instanceId": 1,
+          "asil-level": "QM",
+          "binding": "SHM",
+          "events": [
+            {
+              "eventName": "counter",
+              "numberOfSampleSlots": 10,
+              "maxSubscribers": 2
+            },
+            {
+              "eventName": "datagram",
+              "numberOfSampleSlots": 10,
+              "maxSubscribers": 2
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

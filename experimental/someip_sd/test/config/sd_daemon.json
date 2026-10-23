@@ -1,0 +1,66 @@
+{
+    "unicast" : "10.0.3.1",
+    "iptype" : "IPv4",
+    "logging" :
+    {
+        "level" : "info"
+    },
+    "applications" : [],
+    "services" :
+    [
+        {
+            "service" : "0x1234",
+            "instance" : "0x5678",
+            "is-provider" : "false",
+            "unreliable" : "30600",
+            "events" :
+            [
+                {
+                    "event" : "0x8778",
+                    "is_field" : "true"
+                }
+            ],
+            "eventgroups" :
+            [
+                {
+                    "eventgroup" : "0x4465",
+                    "events" : [ "0x8778" ]
+                }
+            ]
+        },
+        {
+            "service" : "0x2345",
+            "instance" : "0x0001",
+            "is-provider" : "true",
+            "unreliable" : "30620",
+            "events" :
+            [
+                {
+                    "event" : "0x8001",
+                    "is_field" : "true"
+                }
+            ],
+            "eventgroups" :
+            [
+                {
+                    "eventgroup" : "0x0010",
+                    "events" : [ "0x8001" ]
+                }
+            ]
+        }
+    ],
+    "service-discovery" :
+    {
+        "enable" : "true",
+        "multicast" : "224.244.224.245",
+        "port" : "30491",
+        "protocol" : "udp",
+        "initial_delay_min" : "10",
+        "initial_delay_max" : "100",
+        "repetitions_base_delay" : "200",
+        "repetitions_max" : "3",
+        "ttl" : "3",
+        "cyclic_offer_delay" : "2000",
+        "request_response_delay" : "1500"
+    }
+}
