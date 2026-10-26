@@ -39,22 +39,49 @@ config_setting(
 )
 
 cc_library(
-    name = "kernel_transport",
-    srcs = ["module/io_sock_module.c"],
-    hdrs = ["module/event_plugin.h"],
-    copts = iosock_copts(":qnx_x86_64", ":qnx_arm64"),
-    data = iosock_sdp_inputs(":qnx_x86_64", ":qnx_arm64"),
+    name = "log",
+    srcs = ["module/log.cpp"],
+    hdrs = ["module/log.h"],
+    features = COMPILER_WARNING_FEATURES,
     target_compatible_with = _QNX_ONLY,
     alwayslink = True,
 )
 
 cc_library(
+    name = "kernel_transport",
+    srcs = [
+        "module/module.c",
+    ],
+    hdrs = [
+        "module/event_plugin.h",
+        "module/module.h",
+    ],
+    copts = iosock_copts(":qnx_x86_64", ":qnx_arm64"),
+    data = iosock_sdp_inputs(":qnx_x86_64", ":qnx_arm64"),
+    target_compatible_with = _QNX_ONLY,
+    deps = [":log"],
+    alwayslink = True,
+)
+
+cc_library(
     name = "event_plugin",
-    srcs = ["module/event_plugin.cpp"],
+    srcs = [
+        "module/control_channel.cpp",
+        "module/control_channel.h",
+        "module/event_plugin.cpp",
+        "module/kernel_sockets.cpp",
+        "module/kernel_sockets.h",
+        "module/rx_router.cpp",
+        "module/rx_router.h",
+        "module/tx_forwarder.cpp",
+        "module/tx_forwarder.h",
+        "module/types.h",
+    ],
     features = COMPILER_WARNING_FEATURES,
     target_compatible_with = _QNX_ONLY,
     deps = [
         ":kernel_transport",
+        ":log",
         "//experimental/someip_sd:sd_protocol",
         "//score/message_passing",
         "//score/mw/com",

@@ -21,12 +21,12 @@ import someip_sd_scenario as scenario
 class ScenarioLifecycleTest(unittest.TestCase):
     def test_qnx_loads_module_and_waits_for_readiness(self):
         console = Mock()
-        console.run_sh_cmd_output.side_effect = [(0, ""), (0, "ready: kernel socket event module")]
+        console.run_sh_cmd_output.side_effect = [(0, ""), (0, "[someip_event] event task started")]
         side = scenario.ConsoleSide(console)
         side.start_event_module()
         calls = console.run_sh_cmd_output.call_args_list
         self.assertIn("mount -T io-sock /opt/someip_sd/bin/mods-someip-event.so", calls[0].args[0])
-        self.assertIn("cat /tmp/someip_sd_event_module.log", calls[1].args[0])
+        self.assertIn("slog2info", calls[1].args[0])
         self.assertFalse(any("someip_event_module " in call.args[0] for call in calls))
 
     def test_qnx_readiness_failure_is_reported(self):

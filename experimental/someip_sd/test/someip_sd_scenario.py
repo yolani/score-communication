@@ -33,6 +33,8 @@ CLIENT_TIMEOUT_SECONDS = CLIENT_RUNTIME_SECONDS + 15
 PROVIDER_RUNTIME_SECONDS = 45
 PEER_CONSUMER_TIMEOUT_SECONDS = 90
 EVENT_MODULE_LOG = "/tmp/someip_sd_event_module.log"
+# The io-sock module logs to slog2; its messages carry this prefix.
+IOSOCK_MODULE_LOG_COMMAND = 'slog2info | grep -F "[someip_event]"'
 
 
 class ConsoleSide:
@@ -70,14 +72,17 @@ class ConsoleSide:
         deadline = time.monotonic() + 10
         out = ""
         while time.monotonic() < deadline:
-            rc, out = self.sh(f"cat {EVENT_MODULE_LOG}")
-            if rc == 0 and "ready: kernel socket event module" in out:
+            rc, out = self.sh(IOSOCK_MODULE_LOG_COMMAND)
+            if rc == 0 and "event task started" in out:
                 return
             time.sleep(0.1)
         raise RuntimeError(f"io-sock event module did not become ready:\n{out}")
 
+    def event_module_log(self):
+        return _sh(self, IOSOCK_MODULE_LOG_COMMAND)
+
     def check_event_module(self, log):
-        assert "ready: kernel socket event module" in log, "QNX did not use the io-sock module"
+        assert "event task started" in log, "QNX did not use the io-sock module"
         assert "RX direct mbuf-to-LoLa:" in log, "kernel RX did not write directly into LoLa"
         assert "TX MEXTADD: first notification" in log, "kernel TX did not use MEXTADD"
         assert "TX MEXTADD: first LoLa sample reference released" in log, "mbuf sample references were not released"
@@ -101,6 +106,9 @@ class ContainerSide:
 
     def start_event_module(self):
         self.start(f"{SD_DIR}/bin/someip_event_module {SD_DIR}/etc/mw_com_config.json > {EVENT_MODULE_LOG} 2>&1")
+
+    def event_module_log(self):
+        return _sh(self, f"cat {EVENT_MODULE_LOG}")
 
     def check_event_module(self, log):
         del log
@@ -173,7 +181,7 @@ def _run(sd_side, peer_side):
         timeout=PEER_CONSUMER_TIMEOUT_SECONDS + 30,
     )
     _sh(sd_side, "sleep 1")
-    module_log = _sh(sd_side, f"cat {EVENT_MODULE_LOG}")
+    module_log = sd_side.event_module_log()
     print(f"\n[peer consumer]\n{peer_out}\n[event module]\n{module_log}")
     sd_side.check_event_module(module_log)
 

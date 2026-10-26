@@ -19,7 +19,6 @@ extern "C" {
 
 int someip_event_start(void);
 void someip_event_abort_start(void);
-void someip_event_ready(void);
 void someip_event_poll(void);
 void someip_event_datagram(unsigned short local_port,
                            const unsigned char sender_ip[4],
@@ -30,7 +29,7 @@ void someip_event_release_tx(void* context);
 
 //TODO: properly split C and C++ interfaces
 /* Transport functions run only on the module's kernel thread. */
-int someip_event_open_socket(unsigned short port);
+int someip_event_open_udp_socket(unsigned short port);
 void someip_event_copy_packet(const void* packet, unsigned int offset, unsigned int size, void* destination);
 /* Always consumes context, including on failure. Header is copied; payload is attached with MEXTADD. */
 int someip_event_send(unsigned short local_port,

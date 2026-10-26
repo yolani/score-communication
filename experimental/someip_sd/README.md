@@ -212,8 +212,8 @@ The SD daemon and applications do not need a new control protocol or deployment 
 bazel build --config=qnx_x86_64 //experimental/someip_sd/iosock_event_module:mods_someip_event
 # After installing the module and existing configs under /opt/someip_sd:
 mount -T io-sock /opt/someip_sd/bin/mods-someip-event.so
-cat /tmp/someip_sd_event_module.log
-# Start the SD daemon after "ready: kernel socket event module" appears.
+slog2info | grep -F "[someip_event]"
+# Start the SD daemon after "event task started" appears.
 ```
 
 - The C glue owns all event-transport sockets: `socreate`, `sosetopt`, `sobind`, `soreceive` and `sosend`.
@@ -325,7 +325,8 @@ On Linux, build for the target, copy `someip_event_module`, `someip_sd_daemon`, 
 machine; start the event module first.
 
 On QNX, install `mods-someip-event.so` instead of the POSIX event-module executable and load it as described above.
-The module uses `/opt/someip_sd/etc/mw_com_config.json` and logs to `/tmp/someip_sd_event_module.log`.
+The module uses `/opt/someip_sd/etc/mw_com_config.json` and logs to slog2 with the prefix `[someip_event]`
+(`slog2info | grep -F "[someip_event]"`).
 Do not run both event-module implementations in the same stack; they use the same control service and UDP ports.
 
 ```sh

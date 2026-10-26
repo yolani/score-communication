@@ -17,6 +17,8 @@ import time
 
 logger = logging.getLogger(__name__)
 
+MODULE_LOG_COMMAND = 'slog2info | grep -F "[someip_event]"'
+
 
 def execute(target, command):
     rc, data = target.execute(command)
@@ -30,15 +32,15 @@ def test_kernel_transport(target):
     assert rc == 0, output
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
-        rc, output = execute(target, "cat /tmp/someip_sd_event_module.log")
-        if rc == 0 and "ready: kernel socket event module" in output:
+        rc, output = execute(target, MODULE_LOG_COMMAND)
+        if rc == 0 and "event task started" in output:
             break
         time.sleep(0.1)
     else:
         raise AssertionError(f"module not ready:\n{output}")
 
     rc, output = execute(target, "timeout -s TERM 40 /opt/someip_sd/bin/transport_probe 2>&1")
-    _, module_log = execute(target, "cat /tmp/someip_sd_event_module.log")
+    _, module_log = execute(target, MODULE_LOG_COMMAND)
     assert rc == 0, f"{output}\n[module]\n{module_log}"
     assert "result: OK" in output
     assert "RX direct mbuf-to-LoLa:" in module_log

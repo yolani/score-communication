@@ -351,7 +351,7 @@ bool EventModule::OpenSocket(std::uint16_t port)
         return false;
     }
     sockets_[port] = socket_fd;
-    Log("listening on UDP port " + std::to_string(port));
+    Log("Successfully opened socket on UDP port " + std::to_string(port));
     return true;
 }
 
