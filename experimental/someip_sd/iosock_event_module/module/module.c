@@ -21,6 +21,7 @@
 #include <sys/systm.h>
 #include <sys/malloc.h>
 #include <sys/proc.h>
+#include <sys/refcount.h>
 #include <sys/sysctl.h>
 #include <sys/kthread.h>
 #include <qnx/qnx_modload.h>
@@ -42,6 +43,16 @@ MALLOC_DEFINE(M_SOMEIP_MODULE, "someip_module", "SOME/IP module");
 
 /* compilation check to ensure SOME/IP header fits into a pkthdr mbuf and memcpy does not write beyond the mbuf */
 _Static_assert(SOMEIP_HEADER_SIZE <= MHLEN, "SOME/IP header must fit into a pkthdr mbuf");
+
+/* Upper bound of page-contiguous payload fragments per notification; covers payloads of up to 3 pages. */
+#define MAX_PAYLOAD_FRAGMENTS 4U
+
+/* Shared by all fragment mbufs of one payload; the TX context is released when the last fragment is freed. */
+struct tx_payload
+{
+    volatile u_int fragments;
+    void* context;
+};
 
 /* list containing all open event sockets */
 static struct event_socket* sockets;
@@ -167,12 +178,28 @@ void someip_event_copy_packet(const void* packet, unsigned int offset, unsigned 
 
 /**
  * \private
- * \brief Callback function invoked to free the payload mbuf after it has been sent.
+ * \brief Callback invoked when a payload fragment mbuf is freed; releases the TX context with the last fragment.
  * \param packet Pointer to the mbuf being freed.
  */
 static void payload_freed(struct mbuf* packet)
 {
-    someip_event_release_tx(packet->m_ext.ext_arg1);
+    struct tx_payload* tx = packet->m_ext.ext_arg1;
+    if (refcount_release(&tx->fragments))
+    {
+        someip_event_release_tx(tx->context);
+        free(tx, M_SOMEIP_MODULE);
+    }
+}
+
+/**
+ * \private
+ * \brief Number of virtual pages spanned by a buffer.
+ */
+static unsigned int page_count(const unsigned char* buffer, unsigned int size)
+{
+    const uintptr_t first = (uintptr_t)buffer >> PAGE_SHIFT;
+    const uintptr_t last = ((uintptr_t)buffer + size - 1U) >> PAGE_SHIFT;
+    return (unsigned int)(last - first) + 1U;
 }
 
 /**
@@ -209,32 +236,76 @@ int someip_event_send(unsigned short local_port,
         someip_event_release_tx(context);
         return ENOMEM;
     }
-    struct mbuf* data = m_get(M_NOWAIT, MT_DATA);
-    if (data == NULL)
-    {
-        someip_log(SOMEIP_LOG_ERROR, "Failed to allocate mbuf for data");
-        m_freem(packet);
-        someip_event_release_tx(context);
-        return ENOMEM;
-    }
     /* Place header at the end of the mbuf so IP/UDP/link headers can be prepended without another allocation. */
     M_ALIGN(packet, SOMEIP_HEADER_SIZE);
     memcpy(mtod(packet, void*), header, SOMEIP_HEADER_SIZE_U);
     packet->m_len = SOMEIP_HEADER_SIZE;
     packet->m_pkthdr.len = SOMEIP_HEADER_SIZE_U + size;
-    // inject payload pointer into mbuf using external storage mechanism
-    MEXTADD(
-        data, /* mbuf to attach external storage to */
-        (char*)payload, /* pointer to the external storage */
-        MAX(1U, size),  /* size of the external storage */
-        payload_freed,  /* callback to free the external storage */
-        context,        /* context pointer passed to the payload release callback */
-        NULL,           /* unused */
-        M_RDONLY,       /* read-only flag */
-        EXT_MOD_TYPE    /* type of external storage */
-    );
-    data->m_len = size;
-    packet->m_next = data;
+
+    if (size == 0U)
+    {
+        someip_event_release_tx(context);
+    }
+    else
+    {
+        /* Drivers resolve the physical address of each external buffer (m_phys) and panic if it is not physically
+         * contiguous; shared memory is only contiguous within a page, so attach one fragment per page. */
+        const unsigned int fragments = page_count(payload, size);
+        struct mbuf* data[MAX_PAYLOAD_FRAGMENTS] = {NULL};
+        struct tx_payload* tx = NULL;
+        int allocated = (fragments <= MAX_PAYLOAD_FRAGMENTS) ? 1 : 0;
+        for (unsigned int index = 0U; (allocated != 0) && (index < fragments); ++index)
+        {
+            data[index] = m_get(M_NOWAIT, MT_DATA);
+            allocated = (data[index] != NULL) ? 1 : 0;
+        }
+        if (allocated != 0)
+        {
+            tx = malloc(sizeof(*tx), M_SOMEIP_MODULE, M_NOWAIT);
+            allocated = (tx != NULL) ? 1 : 0;
+        }
+        if (allocated == 0)
+        {
+            someip_log(SOMEIP_LOG_ERROR, "Failed to allocate %u payload fragment(s)", fragments);
+            for (unsigned int index = 0U; index < MAX_PAYLOAD_FRAGMENTS; ++index)
+            {
+                if (data[index] != NULL)
+                {
+                    m_free(data[index]);
+                }
+            }
+            m_freem(packet);
+            someip_event_release_tx(context);
+            return (fragments <= MAX_PAYLOAD_FRAGMENTS) ? ENOMEM : EMSGSIZE;
+        }
+        tx->context = context;
+        refcount_init(&tx->fragments, fragments);
+
+        struct mbuf* tail = packet;
+        const unsigned char* fragment = payload;
+        unsigned int remaining = size;
+        for (unsigned int index = 0U; index < fragments; ++index)
+        {
+            const unsigned int to_page_end = PAGE_SIZE - (unsigned int)((uintptr_t)fragment & PAGE_MASK);
+            const unsigned int length = MIN(remaining, to_page_end);
+            // inject payload pointer into mbuf using external storage mechanism
+            MEXTADD(
+                data[index],          /* mbuf to attach external storage to */
+                (char*)fragment,      /* pointer to the external storage */
+                length,               /* size of the external storage */
+                payload_freed,        /* callback to free the external storage */
+                tx,                   /* shared fragment counter and TX context */
+                NULL,                 /* unused */
+                M_RDONLY,             /* read-only flag */
+                EXT_MOD_TYPE          /* type of external storage */
+            );
+            data[index]->m_len = (int)length;
+            tail->m_next = data[index];
+            tail = data[index];
+            fragment += length;
+            remaining -= length;
+        }
+    }
 
     struct sockaddr_in destination;
     memset(&destination, 0, sizeof(destination));
