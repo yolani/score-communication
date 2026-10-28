@@ -22,8 +22,11 @@
 #include "score/mw/com/runtime.h"
 #include "score/mw/com/runtime_configuration.h"
 
+#include <dlfcn.h>
+
 #include <cerrno>
 #include <memory>
+#include <string>
 #include <thread>
 
 namespace
@@ -31,12 +34,22 @@ namespace
 
 using namespace score::someip_sd::iosock_event_module;
 
-using ConfigPath = const char*;
 using TransportPort = unsigned short;
 using TransportByte = unsigned char;
 using TransportPacketSize = unsigned int;
 
-constexpr ConfigPath kConfig{"/opt/someip_sd/etc/mw_com_config.json"};
+/// The module is installed as <prefix>/bin/mods-someip-event.so and reads <prefix>/etc/mw_com_config.json.
+std::string ConfigPath()
+{
+    Dl_info info{};
+    std::string path{(dladdr(reinterpret_cast<void*>(&ConfigPath), &info) != 0) ? info.dli_fname : ""};
+    const auto bin = path.rfind("/bin/");
+    if (bin == std::string::npos)
+    {
+        return "/opt/someip_sd/etc/mw_com_config.json";
+    }
+    return path.substr(0U, bin) + "/etc/mw_com_config.json";
+}
 
 /// Owns the components and serializes all work on the kernel thread. Only the control channel's command queue
 /// is accessed from other threads.
@@ -122,9 +135,11 @@ std::unique_ptr<EventModule> module;
 extern "C" ErrorCode someip_event_start(void)
 {
     OperationSucceeded started{false};
-    std::thread initialize{[&started]() {
+    const auto config = ConfigPath();
+    someip_log(SOMEIP_LOG_INFO, "LoLa configuration %s", config.c_str());
+    std::thread initialize{[&started, &config]() {
         score::mw::com::runtime::InitializeRuntime(
-            score::mw::com::runtime::RuntimeConfiguration{score::filesystem::Path{kConfig}});
+            score::mw::com::runtime::RuntimeConfiguration{score::filesystem::Path{config}});
         module = std::make_unique<EventModule>();
         started = module->Start();
         if (!started)

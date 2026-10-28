@@ -34,6 +34,7 @@ exposed to local clients via `score::message_passing`. Not part of the product.
 | `iosock_poc:iosock_poc_test` | QNX only: LoLa and `score::message_passing` inside an io-sock module (see below) |
 | `iosock_event_module:kernel_transport_test` | QNX only: direct kernel transport, routing, payload boundaries, fan-out and LoLa slot reuse |
 | `test:scenario_lifecycle_test` | Host-side platform selection, module readiness and scenario cleanup checks |
+| `benchmark:someip_bench_dual_qemu_test` | SOME/IP round-trip benchmark through the io-sock module, see [benchmark/README.md](benchmark/README.md) |
 
 ## Prototyp target architecture overview
 ![Architecture diagram](doc/prototype.svg)

@@ -30,7 +30,10 @@ cc_library(
         "protocol/sd_protocol.h",
     ],
     features = COMPILER_WARNING_FEATURES,
-    visibility = ["//experimental/someip_sd/iosock_event_module:__pkg__"],
+    visibility = [
+        "//experimental/someip_sd/benchmark:__pkg__",
+        "//experimental/someip_sd/iosock_event_module:__pkg__",
+    ],
 )
 
 cc_binary(
@@ -46,7 +49,10 @@ cc_binary(
     ],
     features = COMPILER_WARNING_FEATURES,
     target_compatible_with = _LINUX_OR_QNX,
-    visibility = ["//experimental/someip_sd/test:__pkg__"],
+    visibility = [
+        "//experimental/someip_sd/benchmark:__pkg__",
+        "//experimental/someip_sd/test:__pkg__",
+    ],
     deps = [
         ":sd_protocol",
         "//score/message_passing",
@@ -68,7 +74,10 @@ cc_binary(
         "//conditions:default": [],
     }),
     target_compatible_with = _LINUX_OR_QNX,
-    visibility = ["//experimental/someip_sd/test:__pkg__"],
+    visibility = [
+        "//experimental/someip_sd/benchmark:__pkg__",
+        "//experimental/someip_sd/test:__pkg__",
+    ],
     deps = [
         ":sd_protocol",
         "//score/message_passing",
@@ -81,6 +90,7 @@ cc_library(
     srcs = ["client/sd_client.cpp"],
     hdrs = ["client/sd_client.h"],
     features = COMPILER_WARNING_FEATURES,
+    visibility = ["//experimental/someip_sd/benchmark:__pkg__"],
     deps = [
         ":sd_protocol",
         "//score/message_passing",

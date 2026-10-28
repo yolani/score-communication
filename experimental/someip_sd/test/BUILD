@@ -33,6 +33,11 @@ exports_files(
     visibility = ["//experimental/someip_sd/iosock_event_module:__pkg__"],
 )
 
+exports_files(
+    ["dual_qemu_config.json"],
+    visibility = ["//experimental/someip_sd/benchmark:__pkg__"],
+)
+
 # Remote provider on the upstream lg-someip stack; needs @lg_someip//:someipd running alongside.
 cc_binary(
     name = "someip_sd_peer",

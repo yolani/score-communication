@@ -139,6 +139,9 @@ cc_binary(
     copts = _COPTS,
     local_defines = _LOCAL_DEFINES,
     target_compatible_with = _LINUX_OR_QNX,
-    visibility = ["@@//experimental/someip_sd/test:__pkg__"],
+    visibility = [
+        "@@//experimental/someip_sd/benchmark:__pkg__",
+        "@@//experimental/someip_sd/test:__pkg__",
+    ],
     deps = [":daemon_core"],
 )

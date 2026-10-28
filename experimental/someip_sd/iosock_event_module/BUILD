@@ -94,7 +94,10 @@ cc_shared_library(
     shared_lib_name = "mods-someip-event.so",
     target_compatible_with = _QNX_ONLY,
     user_link_flags = ["-lfsnotify"],
-    visibility = ["//experimental/someip_sd/test:__pkg__"],
+    visibility = [
+        "//experimental/someip_sd/benchmark:__pkg__",
+        "//experimental/someip_sd/test:__pkg__",
+    ],
     deps = [":event_plugin"],
 )
 
