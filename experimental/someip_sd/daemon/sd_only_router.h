@@ -53,7 +53,8 @@ class SdOnlyRouter final : public lgsomeip::ServiceRouter
     using InternalMessageHandler = std::function<void(std::uint16_t client_id, std::vector<std::uint8_t> message)>;
     using Task = std::function<void()>;
 
-    SdOnlyRouter() = default;
+    /// Optional; without event module the routing callbacks are only logged. Must outlive the router.
+    explicit SdOnlyRouter(EventModuleClient* event_module = nullptr);
     ~SdOnlyRouter() override;
 
     SdOnlyRouter(const SdOnlyRouter&) = delete;
@@ -62,9 +63,6 @@ class SdOnlyRouter final : public lgsomeip::ServiceRouter
     SdOnlyRouter& operator=(SdOnlyRouter&&) = delete;
 
     void SetServiceManager(lgsomeip::ServiceManager* service_manager);
-
-    /// Optional; without event module the routing callbacks are only logged.
-    void SetEventModule(EventModuleClient* event_module);
 
     /// Receives the SD messages the ServiceManager sends to local applications (offers, subscribe acks).
     /// May be called from any thread.
@@ -145,6 +143,16 @@ class SdOnlyRouter final : public lgsomeip::ServiceRouter
         bool stopped{false};
     };
 
+    struct PeerState
+    {
+        std::uint16_t session;
+        bool reboot_flag;
+    };
+
+    /// (sender ip, receiver ip)
+    using PeerKey = std::pair<std::string, std::string>;
+    using TimerId = std::int32_t;
+
     void StopTimer(std::unique_ptr<Timer> timer);
     std::shared_ptr<lgsomeip::osabstraction::Address> MakeUdpAddress(const std::string& ip_address,
                                                                      std::uint16_t port,
@@ -160,14 +168,13 @@ class SdOnlyRouter final : public lgsomeip::ServiceRouter
                                      event_module_protocol::Message& message);
 
     lgsomeip::ServiceManager* service_manager_{nullptr};
-    EventModuleClient* event_module_{nullptr};
+    EventModuleClient* const event_module_;
     std::shared_ptr<lgsomeip::osabstraction::Multiplexer> multiplexer_;
     std::shared_ptr<lgsomeip::osabstraction::Address> multicast_address_;
     std::shared_ptr<lgsomeip::Endpoint> multicast_endpoint_;
     std::shared_ptr<lgsomeip::Endpoint> unicast_endpoint_;
 
-    // key: (sender ip, receiver ip), value: (last session id, last reboot flag)
-    std::map<std::pair<std::string, std::string>, std::pair<std::uint16_t, bool>> reboot_info_;
+    std::map<PeerKey, PeerState> reboot_info_;
 
     std::mutex handler_mutex_;
     InternalMessageHandler internal_message_handler_;
@@ -178,7 +185,7 @@ class SdOnlyRouter final : public lgsomeip::ServiceRouter
     std::vector<Task> tasks_;
 
     std::mutex timers_mutex_;
-    std::map<std::int32_t, std::unique_ptr<Timer>> timers_;
+    std::map<TimerId, std::unique_ptr<Timer>> timers_;
 };
 
 }  // namespace score::someip_sd

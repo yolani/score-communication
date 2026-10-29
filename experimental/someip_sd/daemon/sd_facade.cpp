@@ -25,6 +25,8 @@
 
 #include <algorithm>
 #include <exception>
+#include <iterator>
+#include <utility>
 #include <variant>
 
 namespace score::someip_sd
@@ -223,7 +225,7 @@ void SdFacade::HandleClientMessage(std::uint16_t client_id, const protocol::Mess
         case protocol::Opcode::kOfferService:
             if (client.offered.count(key) == 0U)
             {
-                client.offered[key] = std::make_pair(message.major, message.minor);
+                client.offered[key] = OfferedVersion{message.major, message.minor};
                 SendOfferService(client_id, key, message.major, message.minor, lgsomeip::SOMEIP_DEFAULT_TTL_ON);
             }
             break;
@@ -232,9 +234,8 @@ void SdFacade::HandleClientMessage(std::uint16_t client_id, const protocol::Mess
             const auto found = client.offered.find(key);
             if (found != client.offered.end())
             {
-                // rename to StopOfferService to avoid confusion
                 SendOfferService(
-                    client_id, key, found->second.first, found->second.second, lgsomeip::SOMEIP_DEFAULT_TTL_OFF);
+                    client_id, key, found->second.major, found->second.minor, lgsomeip::SOMEIP_DEFAULT_TTL_OFF);
                 client.offered.erase(found);
             }
             // TODO: error handling? stopping a service that was not offered by the client...
@@ -346,7 +347,7 @@ void SdFacade::HandleClientDisconnect(std::uint16_t client_id)
         for (const auto& offer : found->second.offered)
         {
             SendOfferService(
-                client_id, offer.first, offer.second.first, offer.second.second, lgsomeip::SOMEIP_DEFAULT_TTL_OFF);
+                client_id, offer.first, offer.second.major, offer.second.minor, lgsomeip::SOMEIP_DEFAULT_TTL_OFF);
         }
     }
     clients_.erase(client_id);

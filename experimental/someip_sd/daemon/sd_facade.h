@@ -59,12 +59,18 @@ class SdFacade final
         bool sent;
     };
 
+    struct OfferedVersion
+    {
+        std::uint8_t major;
+        std::uint32_t minor;
+    };
+
     struct ClientState
     {
         std::set<ServiceKey> available;
         std::vector<Subscription> subscriptions;
         /// Offered service instances with their (major, minor) version, needed again for StopOffer.
-        std::map<ServiceKey, std::pair<std::uint8_t, std::uint32_t>> offered;
+        std::map<ServiceKey, OfferedVersion> offered;
     };
 
     // multiplexer thread

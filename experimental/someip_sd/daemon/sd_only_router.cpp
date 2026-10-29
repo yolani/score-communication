@@ -30,6 +30,7 @@
 #include <exception>
 #include <sstream>
 #include <stdexcept>
+#include <utility>
 
 namespace score::someip_sd
 {
@@ -65,9 +66,11 @@ bool ParseIpv4(const std::string& text, std::array<std::uint8_t, 4U>& bytes)
 
 }  // namespace
 
+SdOnlyRouter::SdOnlyRouter(EventModuleClient* event_module) : event_module_{event_module} {}
+
 SdOnlyRouter::~SdOnlyRouter()
 {
-    std::map<std::int32_t, std::unique_ptr<Timer>> timers;
+    std::map<TimerId, std::unique_ptr<Timer>> timers;
     {
         std::lock_guard<std::mutex> lock{timers_mutex_};
         timers.swap(timers_);
@@ -88,11 +91,6 @@ SdOnlyRouter::~SdOnlyRouter()
 void SdOnlyRouter::SetServiceManager(lgsomeip::ServiceManager* service_manager)
 {
     service_manager_ = service_manager;
-}
-
-void SdOnlyRouter::SetEventModule(EventModuleClient* event_module)
-{
-    event_module_ = event_module;
 }
 
 void SdOnlyRouter::ForwardToEventModule(const event_module_protocol::Message& message)
@@ -366,12 +364,12 @@ bool SdOnlyRouter::IsReboot(const std::shared_ptr<lgsomeip::Endpoint>& endpoint,
     const auto session = static_cast<std::uint16_t>(request_id & 0xFFFFU);
 
     bool reboot_detected{false};
-    const auto key = std::make_pair(sender_ip, receiver_ip);
+    const PeerKey key{sender_ip, receiver_ip};
     const auto found = reboot_info_.find(key);
     if (found != reboot_info_.end())
     {
-        const auto previous_session = found->second.first;
-        const bool previous_reboot_flag = found->second.second;
+        const auto previous_session = found->second.session;
+        const bool previous_reboot_flag = found->second.reboot_flag;
         reboot_detected = ((!previous_reboot_flag) && reboot_flag) ||
                           (previous_reboot_flag && reboot_flag && (previous_session >= session));
     }
@@ -385,7 +383,7 @@ bool SdOnlyRouter::IsReboot(const std::shared_ptr<lgsomeip::Endpoint>& endpoint,
             peer = reboot_info_.erase(peer);
         }
     }
-    reboot_info_[key] = std::make_pair(session, reboot_flag);
+    reboot_info_[key] = PeerState{session, reboot_flag};
     return reboot_detected;
 }
 

@@ -24,6 +24,8 @@
 
 int main(int argc, char** argv)
 {
+    using namespace std::chrono_literals;
+
     if (argc != 2)
     {
         std::cerr << "usage: " << argv[0] << " <lg-someip configuration json>" << std::endl;
@@ -41,15 +43,14 @@ int main(int argc, char** argv)
     {
         // Keeps connecting in the background, so the event module may also be started later.
         score::someip_sd::EventModuleClient event_module{};
-        if (!event_module.Connect(std::chrono::seconds{2}))
+        if (!event_module.Connect(2s))
         {
             std::cerr << "event module not reachable yet, routing commands are dropped until it is" << std::endl;
         }
 
-        auto router = std::make_shared<score::someip_sd::SdOnlyRouter>();
+        auto router = std::make_shared<score::someip_sd::SdOnlyRouter>(&event_module);
         lgsomeip::ServiceManager service_manager{"someip_sd_daemon", argv[1], router};
         router->SetServiceManager(&service_manager);
-        router->SetEventModule(&event_module); // TODO: use constructor parameter?
         score::someip_sd::SdFacade facade{service_manager, *router};
 
         service_manager.init();
@@ -67,7 +68,6 @@ int main(int argc, char** argv)
 
         facade.Stop();
         service_manager.stop();
-        router->SetEventModule(nullptr);
     }
     catch (const std::exception& exception)
     {
