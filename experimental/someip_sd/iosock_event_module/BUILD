@@ -55,6 +55,7 @@ cc_library(
     hdrs = [
         "module/event_plugin.h",
         "module/module.h",
+        "module/wakeup_signal.h",
     ],
     copts = iosock_copts(":qnx_x86_64", ":qnx_arm64"),
     data = iosock_sdp_inputs(":qnx_x86_64", ":qnx_arm64"),
@@ -76,6 +77,7 @@ cc_library(
         "module/tx_forwarder.cpp",
         "module/tx_forwarder.h",
         "module/types.h",
+        "module/wakeup_signal.cpp",
     ],
     features = COMPILER_WARNING_FEATURES,
     target_compatible_with = _QNX_ONLY,

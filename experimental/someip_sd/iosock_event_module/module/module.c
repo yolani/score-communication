@@ -34,6 +34,7 @@
 
 #include "experimental/someip_sd/iosock_event_module/module/log.h"
 #include "experimental/someip_sd/iosock_event_module/module/module.h"
+#include "experimental/someip_sd/iosock_event_module/module/wakeup_signal.h"
 
 /* Define a memory allocation type for the SOME/IP event module.
    Can be used with malloc() and free() for accounting purposes and
@@ -46,6 +47,9 @@ _Static_assert(SOMEIP_HEADER_SIZE <= MHLEN, "SOME/IP header must fit into a pkth
 
 /* Upper bound of page-contiguous payload fragments per notification; covers payloads of up to 3 pages. */
 #define MAX_PAYLOAD_FRAGMENTS 4U
+
+/* Polling fallback until every source signals the kernel thread. */
+#define WAKEUP_TIMEOUT_MS 10U
 
 /* Payloads up to one cluster are copied: drivers may free TX mbufs seconds later (some EMACs reclaim lazily),
  * and a zero-copy reference keeps the LoLa sample, of which the proxy holds only a few, until then. */
@@ -430,7 +434,7 @@ static void event_task(void* arg __unused)
         {
             receive_udp_datagrams(entry); /* Rx handling */
         }
-        pause("someipevent", MAX(1, hz / 100));
+        (void)someip_wakeup_wait(WAKEUP_TIMEOUT_MS);
     }
 }
 
@@ -440,6 +444,12 @@ static int event_module_handler(module_t mod __unused, int what, void* arg __unu
     {
         case MOD_LOAD:
         {
+            const int wakeup_error = someip_wakeup_init();
+            if (wakeup_error != 0)
+            {
+                someip_log(SOMEIP_LOG_ERROR, "wakeup signal initialization failed: %d", wakeup_error);
+                return wakeup_error;
+            }
             const int ret = someip_event_start();
             if (ret != 0)
             {
