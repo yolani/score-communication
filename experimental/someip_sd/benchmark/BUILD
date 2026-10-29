@@ -52,6 +52,17 @@ cc_binary(
     name = "someip_bench_reflector",
     srcs = ["bench_reflector.cpp"],
     features = COMPILER_WARNING_FEATURES,
+    # Runs on Linux peers with an older libstdc++ than the toolchain's; -static-libstdc++ is not enough, the
+    # toolchain adds -lstdc++ itself. Static glibc < 2.34 needs all of libpthread, else std::condition_variable crashes.
+    linkopts = select({
+        "@platforms//os:linux": [
+            "-static",
+            "-Wl,--whole-archive",
+            "-lpthread",
+            "-Wl,--no-whole-archive",
+        ],
+        "//conditions:default": [],
+    }),
     target_compatible_with = _LINUX_OR_QNX,
     deps = [
         ":bench_protocol",

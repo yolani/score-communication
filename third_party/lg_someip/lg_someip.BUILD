@@ -137,6 +137,17 @@ cc_binary(
     name = "someipd",
     srcs = ["daemon/someipd.cpp"],
     copts = _COPTS,
+    # Runs on Linux peers with an older libstdc++ than the toolchain's; -static-libstdc++ is not enough, the
+    # toolchain adds -lstdc++ itself. Static glibc < 2.34 needs all of libpthread, else std::condition_variable crashes.
+    linkopts = select({
+        "@platforms//os:linux": [
+            "-static",
+            "-Wl,--whole-archive",
+            "-lpthread",
+            "-Wl,--no-whole-archive",
+        ],
+        "//conditions:default": [],
+    }),
     local_defines = _LOCAL_DEFINES,
     target_compatible_with = _LINUX_OR_QNX,
     visibility = [

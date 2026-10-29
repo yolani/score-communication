@@ -166,13 +166,16 @@ Steps:
 
 1. Copy `target_bundle` to the target and unpack it (`scp -O` if the target's sshd has no SFTP).
 2. On the Linux peer, in the target's subnet, run
-   `someip_bench_peer/scripts/run_host_reflector.sh <host_ip> <interface> [<sd_multicast> <sd_port>]`.
-   The script adds the multicast route for SD, which needs root.
+   `someip_bench_peer/scripts/run_host_reflector.sh <host_ip> <interface> [<sd_multicast> <sd_port> [<rx_port>]]`.
+   If the SD group is not routed through `<interface>` yet, the script adds a route, which needs root. If another
+   user owns `/tmp/someip`, it runs lg-someip in a private mount namespace; set `SOMEIP_BENCH_PEER_WORK` if
+   `/tmp/someip_bench_peer` belongs to another user too.
 3. On the target:
 
    ```sh
    SOMEIP_BENCH_WORK=<work_dir> /bin/sh <bundle>/someip_sd/scripts/run_target.sh <target_ip> \
-       [--disable-firewall] [--run 16:100:1000 ...]
+       [--disable-firewall] [--stop <process>] [--sd-multicast <ip> --sd-port <port>] [--rx-port <port>] \
+       [--run 16:100:1000 ...]
    ```
 
    - Results go to `$SOMEIP_BENCH_WORK/results.txt` and CPU samples (`hogs`, if available) to
@@ -181,15 +184,24 @@ Steps:
    - At the end the script prints the module log and the secpol violations of io-sock, the input
      for the secpol rules the module needs.
    - Measure all stacks with the same pf setting.
+   - Networks that only forward configured flows (e.g. an ECU switch configured from the vehicle network)
+     drop the default SD endpoint and event ports. Use an SD endpoint and ports from the network
+     configuration: `--sd-multicast`/`--sd-port`, `--rx-port` on the target and `<rx_port>` on the
+     peer. If another SD daemon owns that endpoint, stop it with `--stop <process>`; the two cannot
+     share it.
    - The module cannot be unloaded. For a fresh measurement, restart io-sock or the target.
-   - ssh may forward `LANG` (e.g. `C.UTF-8`), which QNX libc++ rejects with "can not determine
-     global locale". `run_target.sh` sets `LANG=C`; do the same when starting binaries by hand.
+   - ssh may forward `LANG` and `LC_*` (e.g. `C.UTF-8`, `de_DE.UTF-8`), which QNX libc++ rejects with
+     "can not determine global locale". `run_target.sh` sets `LC_ALL=C`; do the same when starting
+     binaries by hand.
 
 ## Limitations
 
 - The module polls every ~10 ms, which dominates the latency. Event-driven wakeups are not
   implemented yet.
 - UDP events only, no TCP or methods. The benchmark will be extended once they are supported.
+- TX copies payloads up to 2 KB into the mbuf. Larger payloads are sent zero-copy and keep their LoLa
+  sample until the driver frees the mbuf; drivers that free TX mbufs late (seconds on some EMACs)
+  starve the module's proxy of samples.
 - Restarting the local LoLa provider while the module still holds its proxy stops TX. That is why
   all runs share one process.
 - The io-sock module cannot be unloaded. Reload means restarting io-sock or the VM.
