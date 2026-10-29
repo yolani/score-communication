@@ -47,6 +47,10 @@ _Static_assert(SOMEIP_HEADER_SIZE <= MHLEN, "SOME/IP header must fit into a pkth
 /* Upper bound of page-contiguous payload fragments per notification; covers payloads of up to 3 pages. */
 #define MAX_PAYLOAD_FRAGMENTS 4U
 
+/* Payloads up to one cluster are copied: drivers may free TX mbufs seconds later (some EMACs reclaim lazily),
+ * and a zero-copy reference keeps the LoLa sample, of which the proxy holds only a few, until then. */
+#define TX_COPY_THRESHOLD ((unsigned int)MCLBYTES)
+
 /* Shared by all fragment mbufs of one payload; the TX context is released when the last fragment is freed. */
 struct tx_payload
 {
@@ -245,6 +249,19 @@ int someip_event_send(unsigned short local_port,
     if (size == 0U)
     {
         someip_event_release_tx(context);
+    }
+    else if (size <= TX_COPY_THRESHOLD)
+    {
+        /* m_append adds the appended length to m_pkthdr.len itself. */
+        packet->m_pkthdr.len = SOMEIP_HEADER_SIZE;
+        const int appended = m_append(packet, (int)size, (c_caddr_t)payload);
+        someip_event_release_tx(context);
+        if (appended == 0)
+        {
+            someip_log(SOMEIP_LOG_ERROR, "Failed to copy %u payload bytes", size);
+            m_freem(packet);
+            return ENOMEM;
+        }
     }
     else
     {
