@@ -1,0 +1,26 @@
+{
+  "serviceTypes": [
+    {
+      "serviceTypeName": "/iosock/spike_tick",
+      "version": { "major": 1, "minor": 0 },
+      "bindings": [{
+        "binding": "SHM",
+        "serviceId": 6101,
+        "events": [{ "eventName": "tick", "eventId": 1 }]
+      }]
+    }
+  ],
+  "serviceInstances": [
+    {
+      "instanceSpecifier": "iosock/spike_tick",
+      "serviceTypeName": "/iosock/spike_tick",
+      "version": { "major": 1, "minor": 0 },
+      "instances": [{
+        "instanceId": 1,
+        "asil-level": "QM",
+        "binding": "SHM",
+        "events": [{ "eventName": "tick", "numberOfSampleSlots": 16, "maxSubscribers": 1 }]
+      }]
+    }
+  ]
+}
