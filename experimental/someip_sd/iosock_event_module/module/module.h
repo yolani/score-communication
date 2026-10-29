@@ -41,6 +41,7 @@ struct event_socket
 {
     unsigned short port;
     struct socket* socket;
+    volatile unsigned int rx_pending; /* set by the receive upcall, cleared by the event task */
     struct event_socket* next;
 };
 

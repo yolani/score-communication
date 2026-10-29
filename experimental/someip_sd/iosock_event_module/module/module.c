@@ -19,6 +19,7 @@
 #include <sys/kernel.h>
 #include <sys/module.h>
 #include <sys/systm.h>
+#include <machine/atomic.h>
 #include <sys/malloc.h>
 #include <sys/proc.h>
 #include <sys/refcount.h>
@@ -85,6 +86,18 @@ static struct socket* find_socket(unsigned short port)
 }
 
 /**
+ * \private
+ * \brief Receive upcall; runs in the network stack with the receive buffer locked, so it only marks and signals.
+ */
+static int receive_upcall(struct socket* so __unused, void* arg, int waitflag __unused)
+{
+    struct event_socket* entry = arg;
+    atomic_store_rel_int(&entry->rx_pending, 1U);
+    someip_wakeup_signal(SOMEIP_WAKEUP_RX);
+    return SU_OK;
+}
+
+/**
  * \api This function is part of the module's public API.
  * \brief Create a UDP kernel socket for the given port and add it to the list of open event sockets.
  *
@@ -126,14 +139,13 @@ int someip_event_open_udp_socket(unsigned short port)
      * - SO_REUSEADDR: likely unnecessary (UDP has no TIME_WAIT; unload is refused). For UDP unicast it only
      *   permits overlapping binds on different local addresses, not two INADDR_ANY binds (needs SO_REUSEPORT),
      *   and can hide port conflicts. Remove unless such overlap is intended.
-     * - SO_RCVBUF: size for event rate x poll interval (~10 ms, max 32 datagrams/port/cycle) x message size;
+     * - SO_RCVBUF: size for event rate x event task latency x message size (max 32 datagrams/port/iteration);
      *   UDP silently drops on overflow. SO_SNDBUF: avoid ENOBUFS/EWOULDBLOCK on fan-out bursts.
      * - IP_TOS (DSCP) / IP_VLAN_PCP: network QoS, often mandated in vehicle Ethernet.
      * - IP_RECVDSTADDR / IP_RECVIF: per-datagram destination/interface when bound to INADDR_ANY (multi-homed/VLAN).
      * - SO_TIMESTAMP: optional RX timestamps for latency measurement.
      * - IP_ADD_MEMBERSHIP / IP_MULTICAST_IF (+ SO_REUSEPORT): only if multicast event delivery is added.
-     * Also consider binding the SD-announced unicast IP instead of INADDR_ANY, and soupcall_set() RX upcalls
-     * instead of periodic polling (check locking/context).
+     * Also consider binding the SD-announced unicast IP instead of INADDR_ANY.
      */
     int enable = 1;
     struct sockopt option;
@@ -166,6 +178,11 @@ int someip_event_open_udp_socket(unsigned short port)
         return ret;
     }
     entry->port = port;
+    /* Datagrams may have arrived before the upcall is installed; the event task drains them in this iteration. */
+    entry->rx_pending = 1U;
+    SOCKBUF_LOCK(&entry->socket->so_rcv);
+    soupcall_set(entry->socket, SO_RCV, receive_upcall, entry);
+    SOCKBUF_UNLOCK(&entry->socket->so_rcv);
     entry->next = sockets;
     sockets = entry;
     return 0;
@@ -350,8 +367,9 @@ int someip_event_send(unsigned short local_port,
  * \private
  * \brief Receives datagrams from the specified event socket, handles them appropriately and frees resources as needed.
  * \param entry The event socket to receive datagrams from.
+ * \return 1 if the per-port budget was used up before the receive buffer was empty, 0 otherwise.
  */
-static void receive_udp_datagrams(struct event_socket* entry)
+static int receive_udp_datagrams(struct event_socket* entry)
 {
     /* Bound work per port so a busy RX socket cannot starve control commands or TX. */
     for (unsigned int count = 0; count < MAX_DIAGRAMS_RECEIVED_PER_PORT; ++count)
@@ -404,9 +422,10 @@ static void receive_udp_datagrams(struct event_socket* entry)
             {
                 someip_log(SOMEIP_LOG_ERROR, "soreceive port %u failed: %d", entry->port, ret);
             }
-            break; /* receive bufffer empty, nothing more to read */
+            return 0; /* receive bufffer empty, nothing more to read */
         }
     }
+    return 1;
 }
 
 /**
@@ -420,7 +439,7 @@ static void event_task(void* arg __unused)
     /* TODO: currently one loop handling control channel, rx, tx and sleep at the end
      * this needs to be properly designed, probably
      * - exclude control channel from the thread
-     * - wake up rx/tx handling through soupcall_set() and lola receive callback (not qualified, can it be used?)
+     * - wake up tx handling through lola receive callback
      * - use asynchronous lola service discovery in control channel
      */
     for (;;)
@@ -432,7 +451,12 @@ static void event_task(void* arg __unused)
         someip_event_poll(); /* Tx and control channel handling */
         for (struct event_socket* entry = sockets; entry != NULL; entry = entry->next)
         {
-            receive_udp_datagrams(entry); /* Rx handling */
+            /* Cleared before draining, so datagrams arriving meanwhile mark the socket again. */
+            if ((atomic_readandclear_int(&entry->rx_pending) != 0U) && (receive_udp_datagrams(entry) != 0))
+            {
+                atomic_store_rel_int(&entry->rx_pending, 1U);
+                someip_wakeup_signal(SOMEIP_WAKEUP_RX);
+            }
         }
         (void)someip_wakeup_wait(WAKEUP_TIMEOUT_MS);
     }
