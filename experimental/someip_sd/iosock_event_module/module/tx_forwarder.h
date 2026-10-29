@@ -21,6 +21,7 @@
 #include <atomic>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <vector>
 
@@ -93,6 +94,9 @@ class TxForwarder
     {
         Port port{0U};
         InterfaceVersion major{0U};
+        // Set by the LoLa find service handler, which may outlive this entry.
+        std::shared_ptr<std::atomic<bool>> provider_changed;
+        std::optional<score::mw::com::FindServiceHandle> find_handle;
         std::shared_ptr<ProxyOwner> owner;
         std::map<EventId, ProvidedEvent> events;
     };

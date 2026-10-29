@@ -49,8 +49,8 @@ _Static_assert(SOMEIP_HEADER_SIZE <= MHLEN, "SOME/IP header must fit into a pkth
 /* Upper bound of page-contiguous payload fragments per notification; covers payloads of up to 3 pages. */
 #define MAX_PAYLOAD_FRAGMENTS 4U
 
-/* Polling fallback until every source signals the kernel thread. */
-#define WAKEUP_TIMEOUT_MS 10U
+/* Safety net only: every source signals the kernel thread. */
+#define WAKEUP_TIMEOUT_MS 1000U
 
 /* Payloads up to one cluster are copied: drivers may free TX mbufs seconds later (some EMACs reclaim lazily),
  * and a zero-copy reference keeps the LoLa sample, of which the proxy holds only a few, until then. */
@@ -439,7 +439,6 @@ static void event_task(void* arg __unused)
     /* TODO: currently one loop handling control channel, rx, tx and sleep at the end
      * this needs to be properly designed, probably
      * - exclude control channel from the thread
-     * - use asynchronous lola service discovery in control channel
      */
     for (;;)
     {

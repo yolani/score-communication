@@ -69,6 +69,29 @@ void TxForwarder::AddProvidedService(const protocol::Message& message)
         service.events[event].is_field =
             std::find(message.fields.begin(), message.fields.end(), event) != message.fields.end();
     }
+    if (!service.find_handle.has_value())
+    {
+        service.provider_changed = std::make_shared<std::atomic<bool>>(true);
+        const auto name = protocol::LolaInstanceSpecifier(key.first, key.second);
+        auto specifier = com::InstanceSpecifier::Create(std::string{name});
+        if (!specifier.has_value())
+        {
+            someip_log(SOMEIP_LOG_ERROR, "invalid provided instance specifier %s", name.c_str());
+            return;
+        }
+        auto find = com::GenericProxy::StartFindService(
+            [changed = service.provider_changed](auto, auto) noexcept {
+                changed->store(true);
+                someip_wakeup_signal(SOMEIP_WAKEUP_TX);
+            },
+            std::move(specifier).value());
+        if (!find.has_value())
+        {
+            someip_log(SOMEIP_LOG_ERROR, "starting LoLa service discovery %s failed", name.c_str());
+            return;
+        }
+        service.find_handle = std::move(find).value();
+    }
     someip_log(SOMEIP_LOG_INFO,
                "providing 0x%04x.0x%04x",
                static_cast<unsigned>(key.first),
@@ -81,6 +104,10 @@ OperationSucceeded TxForwarder::RemoveProvidedService(const ServiceInstance& key
     if (provided == provided_.end())
     {
         return false;
+    }
+    if (provided->second.find_handle.has_value())
+    {
+        static_cast<void>(com::GenericProxy::StopFindService(provided->second.find_handle.value()));
     }
     if (provided->second.owner)
     {
@@ -169,7 +196,8 @@ void TxForwarder::ConnectProvidedServices()
     {
         auto& service = entry.second;
         // Do not re-subscribe the same PID/event before the old proxy has released all of its samples.
-        if (service.owner || (retired_.count(entry.first) != 0U))
+        if (service.owner || (retired_.count(entry.first) != 0U) || !service.provider_changed ||
+            !service.provider_changed->exchange(false))
         {
             continue;
         }
@@ -187,7 +215,6 @@ std::shared_ptr<TxForwarder::ProxyOwner> TxForwarder::CreateProxyOwner(const Ser
         someip_log(SOMEIP_LOG_ERROR, "invalid provided instance specifier %s", name.c_str());
         return nullptr;
     }
-    //TODO: use StartFindService instead of FindService for asynchronous discovery
     auto handles = com::GenericProxy::FindService(specifier.value());
     if (!handles.has_value())
     {

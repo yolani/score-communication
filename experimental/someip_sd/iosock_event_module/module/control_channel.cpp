@@ -13,6 +13,7 @@
 #include "experimental/someip_sd/iosock_event_module/module/control_channel.h"
 
 #include "experimental/someip_sd/iosock_event_module/module/log.h"
+#include "experimental/someip_sd/iosock_event_module/module/wakeup_signal.h"
 
 #include "score/message_passing/i_server_connection.h"
 
@@ -72,6 +73,7 @@ OperationSucceeded ControlChannel::Start()
             return score::cpp::make_unexpected(score::os::Error::createUnspecifiedError());
         }
         commands_.push_back(std::move(message).value());
+        someip_wakeup_signal(SOMEIP_WAKEUP_CONTROL);
         return {};
     };
     auto on_unexpected_request = [](IServerConnection&,
