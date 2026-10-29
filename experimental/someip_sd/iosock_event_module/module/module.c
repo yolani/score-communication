@@ -439,7 +439,6 @@ static void event_task(void* arg __unused)
     /* TODO: currently one loop handling control channel, rx, tx and sleep at the end
      * this needs to be properly designed, probably
      * - exclude control channel from the thread
-     * - wake up tx handling through lola receive callback
      * - use asynchronous lola service discovery in control channel
      */
     for (;;)

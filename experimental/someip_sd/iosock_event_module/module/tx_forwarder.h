@@ -18,6 +18,7 @@
 
 #include "score/mw/com/types.h"
 
+#include <atomic>
 #include <map>
 #include <memory>
 #include <set>
@@ -50,10 +51,18 @@ class TxForwarder
   private:
     using FieldEvent = bool;
 
+    struct SubscribedEvent
+    {
+        score::mw::com::GenericProxyEvent* event{nullptr};
+        // Set by the LoLa receive handler; starts set to forward samples that arrived before it was installed.
+        std::atomic<bool> pending{true};
+    };
+
     struct ProxyOwner
     {
         std::unique_ptr<score::mw::com::GenericProxy> proxy;
-        std::vector<score::mw::com::GenericProxyEvent*> subscribed;
+        // Map nodes keep their address, which the receive handlers capture.
+        std::map<EventId, SubscribedEvent> subscribed;
 
         ~ProxyOwner();
     };
@@ -73,7 +82,7 @@ class TxForwarder
     struct ProvidedEvent
     {
         FieldEvent is_field{false};
-        score::mw::com::GenericProxyEvent* proxy_event{nullptr};
+        SubscribedEvent* subscription{nullptr};
         std::set<Endpoint> subscribers;
         SessionId session{0U};
         NotificationCount sent{0U};

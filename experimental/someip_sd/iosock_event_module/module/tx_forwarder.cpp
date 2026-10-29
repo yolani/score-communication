@@ -14,6 +14,7 @@
 
 #include "experimental/someip_sd/iosock_event_module/module/event_plugin.h"
 #include "experimental/someip_sd/iosock_event_module/module/log.h"
+#include "experimental/someip_sd/iosock_event_module/module/wakeup_signal.h"
 
 #include <algorithm>
 #include <atomic>
@@ -33,18 +34,23 @@ using SampleCount = std::size_t;
 using TxReferenceCount = std::uint64_t;
 
 constexpr SampleCount kTxMaxSamples{3U};
+// One sample slot stays free for the last value of a field.
+constexpr SampleCount kTxMaxNewSamples{kTxMaxSamples - 1U};
 
 // Updated from the mbuf free callback, which may run outside the kernel thread.
 std::atomic<TxReferenceCount> pending_tx{0U};
 std::atomic<TxReferenceCount> released_tx{0U};
+// Set while the kernel thread waits for sample references to be released by the network.
+std::atomic<bool> release_awaited{false};
 
 }  // namespace
 
 TxForwarder::ProxyOwner::~ProxyOwner()
 {
-    for (auto* event : subscribed)
+    // Unsubscribe() also removes the receive handler and waits for a running one to finish.
+    for (auto& entry : subscribed)
     {
-        event->Unsubscribe();
+        entry.second.event->Unsubscribe();
     }
 }
 
@@ -141,6 +147,8 @@ void TxForwarder::RemoveRemoteSubscriber(const protocol::Message& message)
 
 void TxForwarder::ReleaseRetiredProxies()
 {
+    // Announced before checking, so a release in between is not missed.
+    release_awaited.store(!retired_.empty());
     for (auto retired = retired_.begin(); retired != retired_.end();)
     {
         if (retired->second.use_count() == 1)
@@ -214,8 +222,23 @@ std::shared_ptr<TxForwarder::ProxyOwner> TxForwarder::CreateProxyOwner(const Ser
             someip_log(SOMEIP_LOG_ERROR, "subscribing LoLa event 0x%04x failed", static_cast<unsigned>(event.first));
             continue;
         }
-        event.second.proxy_event = &found->second;
-        owner->subscribed.push_back(&found->second);
+        auto& subscription = owner->subscribed[event.first];
+        subscription.event = &found->second;
+        auto* const pending = &subscription.pending;
+        const auto handler = found->second.SetReceiveHandler([pending]() noexcept {
+            pending->store(true);
+            someip_wakeup_signal(SOMEIP_WAKEUP_TX);
+        });
+        if (!handler.has_value())
+        {
+            someip_log(SOMEIP_LOG_ERROR,
+                       "setting LoLa receive handler of event 0x%04x failed",
+                       static_cast<unsigned>(event.first));
+            found->second.Unsubscribe();
+            owner->subscribed.erase(event.first);
+            continue;
+        }
+        event.second.subscription = &subscription;
     }
     someip_log(SOMEIP_LOG_INFO, "consuming LoLa service %s of the local provider", name.c_str());
     return owner;
@@ -228,11 +251,25 @@ void TxForwarder::ForwardSamples()
         for (auto& element : entry.second.events)
         {
             auto& event = element.second;
-            if ((event.proxy_event == nullptr) || (event.proxy_event->GetFreeSampleCount() == 0U))
+            if ((event.subscription == nullptr) || !event.subscription->pending.load())
             {
                 continue;
             }
-            const auto result = event.proxy_event->GetNewSamples(
+            auto& proxy_event = *event.subscription->event;
+            auto free_samples = proxy_event.GetFreeSampleCount();
+            if (free_samples == 0U)
+            {
+                // Announced before checking again, so a release in between is not missed.
+                release_awaited.store(true);
+                free_samples = proxy_event.GetFreeSampleCount();
+                if (free_samples == 0U)
+                {
+                    continue;
+                }
+            }
+            event.subscription->pending.store(false);
+            const auto limit = std::min(free_samples, kTxMaxNewSamples);
+            const auto result = proxy_event.GetNewSamples(
                 [this, &entry, &element](auto sample) noexcept {
                     auto lease = std::make_shared<SampleLease>(SampleLease{entry.second.owner, std::move(sample)});
                     SendNotification(
@@ -242,12 +279,18 @@ void TxForwarder::ForwardSamples()
                         element.second.last_value = std::move(lease);
                     }
                 },
-                kTxMaxSamples - 1U);
+                limit);
             if (!result.has_value())
             {
                 someip_log(SOMEIP_LOG_ERROR,
                            "getting LoLa samples for event 0x%04x failed",
                            static_cast<unsigned>(element.first));
+            }
+            else if (result.value() == limit)
+            {
+                // More samples may be waiting.
+                event.subscription->pending.store(true);
+                someip_wakeup_signal(SOMEIP_WAKEUP_TX);
             }
         }
     }
@@ -320,6 +363,10 @@ void TxForwarder::ReleaseTxContext(const TxContextHandle context)
     if (released_tx.fetch_add(1U) == 0U)
     {
         someip_log(SOMEIP_LOG_INFO, "TX MEXTADD: first LoLa sample reference released");
+    }
+    if (release_awaited.exchange(false))
+    {
+        someip_wakeup_signal(SOMEIP_WAKEUP_TX);
     }
 }
 
