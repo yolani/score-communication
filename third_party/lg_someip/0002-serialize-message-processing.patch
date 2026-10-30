@@ -1,0 +1,44 @@
+Serialize PacketRouterHost message processing on all platforms
+
+on_external_notification() starts a detached thread per notification that arrives before the SubscribeEventgroupAck
+has been processed; the thread calls on_external_notification() again after 50 ms. Only QNX message passing and TLS
+builds serialize this with mutex_processing_, so on Linux the retries race with on_message() of the I/O threads. Under
+load (many event streams subscribed at once) someipd aborts with "double free or corruption".
+
+diff --git a/src/someip/packetrouter/PacketRouterHost.cpp b/src/someip/packetrouter/PacketRouterHost.cpp
+--- a/src/someip/packetrouter/PacketRouterHost.cpp
++++ b/src/someip/packetrouter/PacketRouterHost.cpp
+@@ -639,9 +639,7 @@
+ 
+ void PacketRouterHost::on_message(std::shared_ptr<Endpoint> endpoint, std::uint8_t* message,
+                                   std::size_t message_length) {
+-#if defined(ENABLE_QNX_MESSAGE_PASSING) || defined(ENABLE_TLS)
+     std::lock_guard<std::mutex> lock(mutex_processing_);
+-#endif // defined(ENABLE_QNX_MESSAGE_PASSING) || defined(ENABLE_TLS)
+ 
+     print_byte_message("PacketRouterHost::on_message", message, message_length);
+ 
+@@ -1603,9 +1601,7 @@
+                 // Wait for SubscribeEventgroupAck to be processed.
+                 std::this_thread::sleep_for(std::chrono::milliseconds(50));
+ 
+-#if defined(ENABLE_QNX_MESSAGE_PASSING) || defined(ENABLE_TLS)
+                 std::lock_guard<std::mutex> lock(mutex_processing_);
+-#endif
+                 // Call this function again to ensure that the initial value is delivered.
+                 on_external_notification(retrans_endpoint, retrans_msg.data(), retrans_msg_len, message_id, request_id,
+                                          ++retry_counter);
+diff --git a/src/someip/packetrouter/PacketRouterHost.h b/src/someip/packetrouter/PacketRouterHost.h
+--- a/src/someip/packetrouter/PacketRouterHost.h
++++ b/src/someip/packetrouter/PacketRouterHost.h
+@@ -298,10 +298,8 @@
+     std::map<int32_t, std::function<void(void)>> timer_handlers_;
+ #endif // ENABLE_QNX_MESSAGE_PASSING
+ 
+-#if defined(ENABLE_QNX_MESSAGE_PASSING) || defined(ENABLE_TLS)
+ private:
+     std::mutex mutex_processing_;
+-#endif // defined(ENABLE_QNX_MESSAGE_PASSING) || defined(ENABLE_TLS)
+ 
+ #if defined(ENABLE_TLS)
+ public:

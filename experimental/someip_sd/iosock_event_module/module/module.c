@@ -434,7 +434,7 @@ static int receive_udp_datagrams(struct event_socket* entry)
  */
 static void event_task(void* arg __unused)
 {
-    someip_log(SOMEIP_LOG_INFO, "event task started");
+    someip_log(SOMEIP_LOG_INFO, "event task started (tid %d)", someip_thread_id());
 
     /* TODO: currently one loop handling control channel, rx, tx and sleep at the end
      * this needs to be properly designed, probably

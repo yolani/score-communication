@@ -15,6 +15,8 @@
 #include <sys/slog.h>
 #include <sys/slogcodes.h>
 
+#include <pthread.h>
+
 #include <array>
 #include <cstdarg>
 #include <cstddef>
@@ -53,4 +55,9 @@ extern "C" void someip_log(const someip_log_severity severity, const char* const
     va_end(arguments);
 
     static_cast<void>(slogf(_SLOGC_NETWORK, ToSlogSeverity(severity), "[someip_event] %s", message.data()));
+}
+
+extern "C" int someip_thread_id(void)
+{
+    return static_cast<int>(pthread_self());
 }

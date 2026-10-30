@@ -16,6 +16,7 @@
 // notifications, which the event module delivers as LoLa samples. Reports round-trip time statistics.
 
 #include "experimental/someip_sd/benchmark/bench_protocol.h"
+#include "experimental/someip_sd/benchmark/cpu_sampler.h"
 #include "experimental/someip_sd/client/sd_client.h"
 #include "experimental/someip_sd/protocol/event_module_protocol.h"
 
@@ -425,17 +426,36 @@ int main(int argc, char** argv)
     {
         samples.open(options.samples);
     }
+    // CPU time per thread group (QNX) over each measured run, including the drain time.
+    const score::someip_sd::benchmark::cpu::CpuSampler sampler{{"io-sock", "someip_sd_daemon"}};
     for (const auto& run : options.runs)
     {
         send_paced(run, options.warmup);
         recorder.StartMeasurement(sequence, run.count);
         send_failed = 0U;
+        const auto cpu_start = sampler.Sample();
+        const auto cpu_start_ns = NowNs();
         send_paced(run, run.count);
         std::this_thread::sleep_for(kDrainTime);
+        const auto cpu_end = sampler.Sample();
+        const auto window_ns = static_cast<std::int64_t>(NowNs() - cpu_start_ns);
 
         std::uint64_t duplicates{0U};
         const auto received = recorder.Received(duplicates);
         std::cout << "BENCH_RESULT " << ResultJson(options.label, run, send_failed, received, duplicates) << std::endl;
+        if (sampler.Supported())
+        {
+            std::cout << score::someip_sd::benchmark::cpu::CpuResult(
+                             options.label,
+                             std::to_string(run.payload_size) + "B@" + std::to_string(run.rate_hz) + "Hz",
+                             1.0,
+                             window_ns,
+                             run.count,
+                             received.size(),
+                             cpu_start,
+                             cpu_end)
+                      << std::endl;
+        }
         if (samples.is_open())
         {
             recorder.WriteSamples(samples, run);

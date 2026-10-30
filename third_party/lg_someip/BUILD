@@ -14,5 +14,6 @@
 # Build file and patches for the external lg-someip repository (@lg_someip), see MODULE.bazel.
 exports_files([
     "0001-fix-subscribe-ack-multicast-reset.patch",
+    "0002-serialize-message-processing.patch",
     "lg_someip.BUILD",
 ])

@@ -27,6 +27,8 @@ typedef enum
 } someip_log_severity;
 
 void someip_log(someip_log_severity severity, const char* format, ...) __attribute__((format(printf, 2, 3)));
+/* QNX thread id of the calling thread, e.g. to attribute CPU time to the module's event task. */
+int someip_thread_id(void);
 
 #ifdef __cplusplus
 }
