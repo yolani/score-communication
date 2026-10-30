@@ -16,18 +16,21 @@
 # Work files go to the directory $SOMEIP_BENCH_WORK, default /tmp/someip_bench_* (/tmp is /dev/shmem: no directories).
 #
 # usage: run_target.sh <target_ip> [--disable-firewall] [--stop <process>]... [--sd-unicast <ip>] [--sd-multicast <ip>]
-#                      [--sd-port <port>] [--rx-port <port>] [--run <payload>:<rate_hz>:<count>]... [bench options]
+#                      [--sd-port <port>] [--rx-port <port>] [--capture <interface>]
+#                      [--run <payload>:<rate_hz>:<count>]... [bench options]
 # The reflector (run_host_reflector.sh) must run on the peer and reach <target_ip>.
 # --stop:    stops a process before the measurement, e.g. another SD daemon owning the SD endpoint.
 # --sd-*:    SD endpoint, default <target_ip>, 224.244.224.245, 30491.
 # --rx-port: UDP port the module receives the reflector's events on, default 30710.
+# --capture: records UDP on <interface> with tcpdump and the RTT per ping, input for target_time.py.
 # Networks that only forward configured flows need an SD endpoint and ports from the network configuration.
 
 set -u
 
 if [ $# -lt 1 ]; then
     echo "usage: $0 <target_ip> [--disable-firewall] [--stop <process>]... [--sd-unicast <ip>] [--sd-multicast <ip>]" \
-        "[--sd-port <port>] [--rx-port <port>] [--run 16:100:1000]... [--warmup 50] [--setup-timeout 30]"
+        "[--sd-port <port>] [--rx-port <port>] [--capture <interface>] [--run 16:100:1000]... [--warmup 50]" \
+        "[--setup-timeout 30]"
     exit 1
 fi
 TARGET_IP=$1
@@ -38,6 +41,7 @@ SD_UNICAST=$TARGET_IP
 SD_MULTICAST=224.244.224.245
 SD_PORT=30491
 RX_PORT=30710
+CAPTURE_INTERFACE=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --disable-firewall) DISABLE_FIREWALL=1; shift ;;
@@ -46,6 +50,7 @@ while [ $# -gt 0 ]; do
         --sd-multicast) SD_MULTICAST=$2; shift 2 ;;
         --sd-port) SD_PORT=$2; shift 2 ;;
         --rx-port) RX_PORT=$2; shift 2 ;;
+        --capture) CAPTURE_INTERFACE=$2; shift 2 ;;
         *) break ;;
     esac
 done
@@ -130,16 +135,27 @@ if command -v hogs > /dev/null 2>&1; then
     HOGS_PID=$!
 fi
 
+CAPTURE_PID=""
+if [ -n "$CAPTURE_INTERFACE" ]; then
+    tcpdump -i "$CAPTURE_INTERFACE" -n -s 128 -w "${WORK}capture.pcap" udp > "${WORK}tcpdump.log" 2>&1 &
+    CAPTURE_PID=$!
+    set -- --samples "${WORK}samples.txt" "$@"
+    sleep 1
+fi
+
 "$PREFIX/bin/someip_bench_lola" --label iosock --mw-com-config "$PREFIX/etc/mw_com_config.json" "$@" \
     > "${WORK}bench.txt" 2>&1
 BENCH_RC=$?
 grep -E "^(BENCH_RESULT|bench:)" "${WORK}bench.txt"
 
-kill $HOGS_PID "$DAEMON_PID" 2>/dev/null
+kill $HOGS_PID $CAPTURE_PID "$DAEMON_PID" 2>/dev/null
 wait "$DAEMON_PID" 2>/dev/null
 
 grep "^BENCH_RESULT" "${WORK}bench.txt" > "${WORK}results.txt"
 log "results: ${WORK}results.txt, CPU samples: ${WORK}hogs.txt, logs: ${WORK}*.log"
+if [ -n "$CAPTURE_PID" ]; then
+    log "capture: ${WORK}capture.pcap, RTT per ping: ${WORK}samples.txt"
+fi
 log "module log:"
 slog2info | grep -F "$MODULE_LOG" | last 20
 # Secpol logs violations in monitoring and permissive mode; they show the rules missing for io-sock hosting LoLa.

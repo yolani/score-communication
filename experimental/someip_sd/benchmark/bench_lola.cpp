@@ -30,6 +30,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <iterator>
 #include <memory>
@@ -68,6 +69,7 @@ struct Options
     std::uint32_t setup_timeout_s{30U};
     std::string label{"iosock"};
     std::string mw_com_config{"./etc/mw_com_config.json"};
+    std::string samples;
 };
 
 void Print(const std::string& text)
@@ -128,6 +130,10 @@ bool ParseOptions(int argc, char** argv, Options& options)
         {
             options.setup_timeout_s = static_cast<std::uint32_t>(std::stoul(text));
         }
+        else if (name == "--samples")
+        {
+            options.samples = text;
+        }
         else
         {
             return false;
@@ -181,6 +187,20 @@ class RoundTripRecorder
             return value != kNotReceived;
         });
         return received;
+    }
+
+    /// Writes "<payload> <rate_hz> <sequence> <rtt_ns>" per received pong of the current run.
+    void WriteSamples(std::ostream& out, const Run& run) const
+    {
+        std::lock_guard<std::mutex> lock{mutex_};
+        for (std::size_t index = 0U; index < rtt_ns_.size(); ++index)
+        {
+            if (rtt_ns_[index] != kNotReceived)
+            {
+                out << run.payload_size << ' ' << run.rate_hz << ' ' << (first_sequence_ + index) << ' '
+                    << rtt_ns_[index] << '\n';
+            }
+        }
     }
 
   private:
@@ -309,7 +329,7 @@ int main(int argc, char** argv)
     {
         std::cerr << "usage: " << argv[0]
                   << " --run <payload 12..1400>:<rate_hz>:<count> [--run ...] [--warmup 50] [--setup-timeout 30]"
-                     " [--label iosock] [--mw-com-config ./etc/mw_com_config.json]"
+                     " [--label iosock] [--mw-com-config ./etc/mw_com_config.json] [--samples <file>]"
                   << std::endl;
         return EXIT_FAILURE;
     }
@@ -400,6 +420,11 @@ int main(int argc, char** argv)
         std::this_thread::sleep_for(kDiscoveryPollInterval);
     }
 
+    std::ofstream samples;
+    if (!options.samples.empty())
+    {
+        samples.open(options.samples);
+    }
     for (const auto& run : options.runs)
     {
         send_paced(run, options.warmup);
@@ -411,6 +436,10 @@ int main(int argc, char** argv)
         std::uint64_t duplicates{0U};
         const auto received = recorder.Received(duplicates);
         std::cout << "BENCH_RESULT " << ResultJson(options.label, run, send_failed, received, duplicates) << std::endl;
+        if (samples.is_open())
+        {
+            recorder.WriteSamples(samples, run);
+        }
     }
 
     client.Unsubscribe(bench::kPongService, bench::kPongInstance, bench::kPongEventgroup);

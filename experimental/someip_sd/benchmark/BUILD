@@ -169,7 +169,10 @@ pkg_files(
 
 pkg_files(
     name = "host_scripts",
-    srcs = ["target/run_host_reflector.sh"],
+    srcs = [
+        "target/run_host_reflector.sh",
+        "target_time.py",
+    ],
     attributes = _EXECUTABLE,
     prefix = "someip_bench_peer/scripts",
 )

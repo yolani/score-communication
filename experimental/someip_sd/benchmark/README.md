@@ -93,6 +93,7 @@ sequenceDiagram
 | `--setup-timeout <s>` | 30 | Time for discovery and the first reflected ping |
 | `--label <name>` | `iosock` | Label in the results |
 | `--mw-com-config <path>` | `./etc/mw_com_config.json` | LoLa deployment |
+| `--samples <path>` | none | Writes `<payload> <rate_hz> <sequence> <rtt_ns>` per received pong |
 
 Setup is complete when the first pong has arrived, which means both subscriptions are active.
 All runs then execute in one process. Each run prints one line:
@@ -175,12 +176,17 @@ Steps:
    ```sh
    SOMEIP_BENCH_WORK=<work_dir> /bin/sh <bundle>/someip_sd/scripts/run_target.sh <target_ip> \
        [--disable-firewall] [--stop <process>] [--sd-multicast <ip> --sd-port <port>] [--rx-port <port>] \
-       [--run 16:100:1000 ...]
+       [--capture <interface>] [--run 16:100:1000 ...]
    ```
 
    - Results go to `$SOMEIP_BENCH_WORK/results.txt` and CPU samples (`hogs`, if available) to
      `$SOMEIP_BENCH_WORK/hogs.txt`. Without `SOMEIP_BENCH_WORK` the files are
      `/tmp/someip_bench_*`.
+   - The RTT includes the network and the peer. `--capture <interface>` records UDP on the target's interface
+     with `tcpdump` (`capture.pcap`) and the RTT per ping (`samples.txt`). [target_time.py](target_time.py)
+     pairs them by sequence number and reports the time spent on the target (RTT minus the time between ping
+     and pong on the interface): `target_time.py capture.pcap samples.txt`. Use `--payload-offset 4` for
+     benchmark applications whose payload starts with a length field (Vector stack).
    - At the end the script prints the module log and the secpol violations of io-sock, the input
      for the secpol rules the module needs.
    - Measure all stacks with the same pf setting.
