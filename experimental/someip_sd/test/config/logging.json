@@ -1,0 +1,8 @@
+{
+  "appId": "SMIP",
+  "appDesc": "someip_sd_prototype",
+  "logLevel": "kInfo",
+  "logLevelThresholdConsole": "kInfo",
+  "logMode": "kConsole",
+  "dynamicDatarouterIdentifiers" : true
+}
