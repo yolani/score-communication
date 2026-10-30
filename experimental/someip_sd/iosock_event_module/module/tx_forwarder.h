@@ -88,6 +88,7 @@ class TxForwarder
         std::set<Endpoint> subscribers;
         SessionId session{0U};
         NotificationCount sent{0U};
+        NotificationCount skipped{0U};
         std::shared_ptr<SampleLease> last_value;
     };
 

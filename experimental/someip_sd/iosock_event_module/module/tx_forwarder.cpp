@@ -33,7 +33,9 @@ namespace com = score::mw::com;
 using SampleCount = std::size_t;
 using TxReferenceCount = std::uint64_t;
 
-constexpr SampleCount kTxMaxSamples{3U};
+// GetNewSamples() returns only the newest samples, so this bounds the backlog that is forwarded without loss.
+// TODO(production): take it from the deployment; it must fit the provider's numberOfSampleSlots.
+constexpr SampleCount kTxMaxSamples{8U};
 // One sample slot stays free for the last value of a field.
 constexpr SampleCount kTxMaxNewSamples{kTxMaxSamples - 1U};
 
@@ -121,6 +123,16 @@ OperationSucceeded TxForwarder::RemoveProvidedService(const ServiceInstance& key
     if (provided->second.owner)
     {
         retired_[key] = std::move(provided->second.owner);
+    }
+    for (const auto& event : provided->second.events)
+    {
+        if (event.second.skipped != 0U)
+        {
+            someip_log(SOMEIP_LOG_WARNING,
+                       "event 0x%04x: %llu LoLa samples skipped in total",
+                       static_cast<unsigned>(event.first),
+                       static_cast<unsigned long long>(event.second.skipped));
+        }
     }
     provided_.erase(provided);
     someip_log(SOMEIP_LOG_INFO,
@@ -307,6 +319,19 @@ void TxForwarder::ForwardSamples()
             }
             event.subscription->pending.store(false);
             const auto limit = std::min(free_samples, kTxMaxNewSamples);
+            const auto available = proxy_event.GetNumNewSamplesAvailable();
+            if (available.has_value() && (available.value() > limit))
+            {
+                if (event.skipped == 0U)
+                {
+                    someip_log(SOMEIP_LOG_WARNING,
+                               "event 0x%04x: backlog of %zu LoLa samples exceeds %zu, older samples are skipped",
+                               static_cast<unsigned>(element.first),
+                               available.value(),
+                               limit);
+                }
+                event.skipped += available.value() - limit;
+            }
             const auto result = proxy_event.GetNewSamples(
                 [this, &entry, &element](auto sample) noexcept {
                     auto lease = std::make_shared<SampleLease>(SampleLease{entry.second.owner, std::move(sample)});
@@ -323,12 +348,6 @@ void TxForwarder::ForwardSamples()
                 someip_log(SOMEIP_LOG_ERROR,
                            "getting LoLa samples for event 0x%04x failed",
                            static_cast<unsigned>(element.first));
-            }
-            else if (result.value() == limit)
-            {
-                // More samples may be waiting.
-                event.subscription->pending.store(true);
-                someip_wakeup_signal(SOMEIP_WAKEUP_TX);
             }
         }
     }
