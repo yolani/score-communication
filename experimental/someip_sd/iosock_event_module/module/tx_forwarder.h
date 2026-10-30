@@ -21,6 +21,7 @@
 #include <atomic>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <vector>
@@ -90,18 +91,27 @@ class TxForwarder
         std::shared_ptr<SampleLease> last_value;
     };
 
+    // Written by the LoLa find service handler, which may outlive the provided service entry.
+    struct DiscoveredProvider
+    {
+        std::mutex mutex;
+        std::optional<score::mw::com::GenericProxy::HandleType> handle;
+        bool changed{false};
+    };
+
     struct ProvidedService
     {
         Port port{0U};
         InterfaceVersion major{0U};
-        // Set by the LoLa find service handler, which may outlive this entry.
-        std::shared_ptr<std::atomic<bool>> provider_changed;
+        std::shared_ptr<DiscoveredProvider> discovered;
         std::optional<score::mw::com::FindServiceHandle> find_handle;
         std::shared_ptr<ProxyOwner> owner;
         std::map<EventId, ProvidedEvent> events;
     };
 
-    std::shared_ptr<ProxyOwner> CreateProxyOwner(const ServiceInstance& key, ProvidedService& service);
+    std::shared_ptr<ProxyOwner> CreateProxyOwner(const ServiceInstance& key,
+                                                 ProvidedService& service,
+                                                 const score::mw::com::GenericProxy::HandleType& handle);
     void SendNotification(const ServiceInstance& key,
                           ProvidedService& service,
                           EventId event_id,

@@ -39,8 +39,10 @@ extern "C" int someip_wakeup_init(void)
 
 extern "C" void someip_wakeup_signal(unsigned int reasons)
 {
+    // Release: publishes the caller's writes (e.g. pending flags) to the thread acquiring the reasons on timeout.
     pending_reasons.fetch_or(reasons, std::memory_order_release);
-    if (!posted.exchange(true, std::memory_order_acq_rel))
+    // Release: the waiter's acquire exchange reads this or a later RMW, so even a coalesced signal synchronizes.
+    if (!posted.exchange(true, std::memory_order_release))
     {
         static_cast<void>(sem_post(&semaphore));
     }
@@ -60,7 +62,9 @@ extern "C" unsigned int someip_wakeup_wait(unsigned int timeout_ms)
     if (sem_timedwait_monotonic(&semaphore, &deadline) == 0)
     {
         // Cleared before taking the reasons, so a signal racing with this wakeup posts again instead of getting lost.
-        posted.store(false, std::memory_order_release);
+        // An acquire RMW, not a store: a signal that still saw posted set must happen-before the exchange below.
+        static_cast<void>(posted.exchange(false, std::memory_order_acquire));
     }
-    return pending_reasons.exchange(0U, std::memory_order_acq_rel);
+    // Acquire: pairs with the release fetch_or, also on timeout when no sem_post synchronized.
+    return pending_reasons.exchange(0U, std::memory_order_acquire);
 }

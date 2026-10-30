@@ -71,7 +71,7 @@ void TxForwarder::AddProvidedService(const protocol::Message& message)
     }
     if (!service.find_handle.has_value())
     {
-        service.provider_changed = std::make_shared<std::atomic<bool>>(true);
+        service.discovered = std::make_shared<DiscoveredProvider>();
         const auto name = protocol::LolaInstanceSpecifier(key.first, key.second);
         auto specifier = com::InstanceSpecifier::Create(std::string{name});
         if (!specifier.has_value())
@@ -79,9 +79,18 @@ void TxForwarder::AddProvidedService(const protocol::Message& message)
             someip_log(SOMEIP_LOG_ERROR, "invalid provided instance specifier %s", name.c_str());
             return;
         }
+        // LoLa also calls the handler for a provider offered before the search started.
         auto find = com::GenericProxy::StartFindService(
-            [changed = service.provider_changed](auto, auto) noexcept {
-                changed->store(true);
+            [discovered = service.discovered](auto handles, auto) noexcept {
+                {
+                    std::lock_guard<std::mutex> lock{discovered->mutex};
+                    discovered->handle.reset();
+                    if (!handles.empty())
+                    {
+                        discovered->handle.emplace(handles.front());
+                    }
+                    discovered->changed = true;
+                }
                 someip_wakeup_signal(SOMEIP_WAKEUP_TX);
             },
             std::move(specifier).value());
@@ -176,6 +185,8 @@ void TxForwarder::ReleaseRetiredProxies()
 {
     // Announced before checking, so a release in between is not missed.
     release_awaited.store(!retired_.empty());
+    // Pairs with the fence in ReleaseTxContext(): either use_count() sees the release or the releaser signals.
+    std::atomic_thread_fence(std::memory_order_seq_cst);
     for (auto retired = retired_.begin(); retired != retired_.end();)
     {
         if (retired->second.use_count() == 1)
@@ -196,36 +207,33 @@ void TxForwarder::ConnectProvidedServices()
     {
         auto& service = entry.second;
         // Do not re-subscribe the same PID/event before the old proxy has released all of its samples.
-        if (service.owner || (retired_.count(entry.first) != 0U) || !service.provider_changed ||
-            !service.provider_changed->exchange(false))
+        if (service.owner || (retired_.count(entry.first) != 0U) || !service.discovered)
         {
             continue;
         }
-        service.owner = CreateProxyOwner(entry.first, service);
+        std::optional<com::GenericProxy::HandleType> handle;
+        {
+            std::lock_guard<std::mutex> lock{service.discovered->mutex};
+            if (!service.discovered->changed)
+            {
+                continue;
+            }
+            service.discovered->changed = false;
+            handle = service.discovered->handle;
+        }
+        if (handle.has_value())
+        {
+            service.owner = CreateProxyOwner(entry.first, service, handle.value());
+        }
     }
 }
 
 std::shared_ptr<TxForwarder::ProxyOwner> TxForwarder::CreateProxyOwner(const ServiceInstance& key,
-                                                                        ProvidedService& service)
+                                                                        ProvidedService& service,
+                                                                        const com::GenericProxy::HandleType& handle)
 {
     const auto name = protocol::LolaInstanceSpecifier(key.first, key.second);
-    auto specifier = com::InstanceSpecifier::Create(std::string{name});
-    if (!specifier.has_value())
-    {
-        someip_log(SOMEIP_LOG_ERROR, "invalid provided instance specifier %s", name.c_str());
-        return nullptr;
-    }
-    auto handles = com::GenericProxy::FindService(specifier.value());
-    if (!handles.has_value())
-    {
-        someip_log(SOMEIP_LOG_ERROR, "finding LoLa service %s failed", name.c_str());
-        return nullptr;
-    }
-    if (handles.value().empty())
-    {
-        return nullptr;
-    }
-    auto proxy = com::GenericProxy::Create(handles.value()[0]);
+    auto proxy = com::GenericProxy::Create(handle);
     if (!proxy.has_value())
     {
         someip_log(SOMEIP_LOG_ERROR, "creating LoLa proxy %s failed", name.c_str());
@@ -288,6 +296,9 @@ void TxForwarder::ForwardSamples()
             {
                 // Announced before checking again, so a release in between is not missed.
                 release_awaited.store(true);
+                // Pairs with the fence in ReleaseTxContext(): either the re-check sees the freed slot or the releaser
+                // sees release_awaited and signals. LoLa frees the slot through its own atomics.
+                std::atomic_thread_fence(std::memory_order_seq_cst);
                 free_samples = proxy_event.GetFreeSampleCount();
                 if (free_samples == 0U)
                 {
@@ -391,6 +402,8 @@ void TxForwarder::ReleaseTxContext(const TxContextHandle context)
     {
         someip_log(SOMEIP_LOG_INFO, "TX MEXTADD: first LoLa sample reference released");
     }
+    // Orders the sample release above before reading release_awaited; pairs with the kernel thread's fences.
+    std::atomic_thread_fence(std::memory_order_seq_cst);
     if (release_awaited.exchange(false))
     {
         someip_wakeup_signal(SOMEIP_WAKEUP_TX);
